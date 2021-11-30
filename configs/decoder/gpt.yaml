@@ -1,0 +1,5 @@
+name: donggyu/mnmt
+model: GPT2LMHeadModel
+body: transformer
+head: lm_head
+tokenizer: MT5Tokenizer

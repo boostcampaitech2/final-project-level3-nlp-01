@@ -9,14 +9,12 @@ import torch
 from torch import nn
 
 
-class Grafomer(PreTrainedModel):
-  def __init__(self, encoder_config, decoder_config):
+class Grafomer(nn.Module):
+  def __init__(self, bart_config, model_config):
     super().__init__()
     
-    self.encoder = nn.ModuleList([BartEncoderLayer(encoder_config) for _ in range(config_encoder.encoder_layers)])
-    self.decoder = nn.ModuleList([BartDecoderLayer(decoder_config) for _ in range(config_decoder.decoder_layers)])
-    
-    self.init_weights()
+    self.encoder = nn.ModuleList([BartEncoderLayer(bart_config) for _ in range(model_config["num_enc_layer"])])
+    self.decoder = nn.ModuleList([BartDecoderLayer(bart_config) for _ in range(model_config["num_dec_layer"])])
 
   def forward(
         self,
@@ -27,7 +25,7 @@ class Grafomer(PreTrainedModel):
         cross_attention_mask=None,
         output_attentions: bool = False,
         cross_attn_head_mask=None,
-        use_cache=None,
+        use_cache=False,
         head_mask=None,
     ):
 
@@ -60,26 +58,24 @@ class Grafomer(PreTrainedModel):
     return decoder_hidden_states
 
 
-class GrafomerModel(PreTrainedModel):
-  def __init__(self, encoder_name, decoder_name):
+class GrafomerModel(nn.Module):
+  def __init__(self, enc_name, dec_name, cfg):
     super().__init__()
-    
-    # self.encoder = mBERT
-    # self.decoder = mGPT
 
-    self.encoder = AutoModel.from_pretrained(encoder_name)
-    self.decoder = AutoModel.from_pretrained(decoder_name)
+    self.encoder = getattr(__import__("transformers"), cfg.encoder.model).from_pretrained(enc_name)
+    self.decoder = getattr(__import__("transformers"), cfg.decoder.model).from_pretrained(dec_name)
 
-    self.encoder_config = AutoConfig.from_pretrained(encoder_name)
-    self.decoder_config = AutoConfig.from_pretrained(decoder_name)
+    self.decoder_body = getattr(self.decoder, cfg.decoder.body)
+    self.decoder_head = getattr(self.decoder, cfg.decoder.head)
+
+    self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
     
-    self.graformer = Grafomer(self.encoder_config, self.decodeer_config)
-    self.init_weights()
+    self.graformer = Grafomer(self.bart_config, cfg.graft_module_config)
   
   def make_cross_mask(self, enc_mask, dec_mask, dtype):
-    nc_mask = enc_mask.to(dtype)
-    dec_mask = dec_mask.to(dtype)
-    return dec_mask.view(-1, 1, dec_mask.shape[1], 1) @ enc_mask.view(-1, 1, 1, enc_mask.shape[1])
+      nc_mask = enc_mask.to(dtype)
+      dec_mask = dec_mask.to(dtype)
+      return dec_mask.view(-1, 1, dec_mask.shape[1], 1) @ enc_mask.view(-1, 1, 1, enc_mask.shape[1])
     
   def forward(
         self,
@@ -105,7 +101,7 @@ class GrafomerModel(PreTrainedModel):
             )
     encoder_hidden_state = encoder_outputs[0]
     
-    decoder_outputs = self.decoder(
+    decoder_outputs = self.decoder_body(
             input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
             use_cache=False,
@@ -114,7 +110,7 @@ class GrafomerModel(PreTrainedModel):
 
     mask = _expand_mask(attention_mask, encoder_hidden_state.dtype)
     dec_mask = _expand_mask(decoder_attention_mask, decoder_hidden_state.dtype)
-    cross_mask = make_cross_mask(attention_mask, decoder_attention_mask, dec_mask.dtype)
+    cross_mask = self.make_cross_mask(attention_mask, decoder_attention_mask, dec_mask.dtype)
 
     graformer_hidden_state = self.graformer(
       encoder_hidden_states=encoder_hidden_state,
@@ -125,7 +121,7 @@ class GrafomerModel(PreTrainedModel):
       output_attentions=output_attentions,
     )
     
-    output_hidden_states = decoder_hidden_state + graformer_hidden_state
+    output_hidden_states = self.decoder_head(decoder_hidden_state + graformer_hidden_state)
 
     return output_hidden_states
 
