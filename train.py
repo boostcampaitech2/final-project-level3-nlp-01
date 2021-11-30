@@ -1,8 +1,8 @@
 import yaml
-import tqdm
 import math
 import logging
 import argparse
+from tqdm import tqdm
 
 import hydra
 from omegaconf import OmegaConf
@@ -41,6 +41,7 @@ def main(cfg):
     
     # TODO Data Loader
     train_set, valid_set = load_data(cfg.data.ko_ja)
+    # tokenized_train, tokenized_valid = load_data("/opt/ml/final-project-level3-nlp-01/data/preprocessed_ko_ja")
     
     fn_kwargs = cfg.data.fn_kwargs
     tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch), 
@@ -124,6 +125,7 @@ def main(cfg):
             
         
         # TODO: Do eval
+        
         
             
         # TODO: Save Model?

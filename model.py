@@ -71,10 +71,12 @@ class GrafomerModel(nn.Module):
     self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
     
     self.graformer = Grafomer(self.bart_config, cfg.graft_module_config)
+    self.pooler = nn.Linear(1024, 768)
+    self.pooler2 = nn.Linear(768, 1024)
   
   def make_cross_mask(self, enc_mask, dec_mask, dtype):
-      nc_mask = enc_mask.to(dtype)
-      dec_mask = dec_mask.to(dtype)
+      enc_mask = enc_mask.to(torch.float16)
+      dec_mask = dec_mask.to(torch.float16)
       return dec_mask.view(-1, 1, dec_mask.shape[1], 1) @ enc_mask.view(-1, 1, 1, enc_mask.shape[1])
     
   def forward(
@@ -106,22 +108,23 @@ class GrafomerModel(nn.Module):
             attention_mask=decoder_attention_mask,
             use_cache=False,
         )
-    decoder_hidden_state = decoder_outputs[0]
+    decoder_hidden_state = self.pooler(decoder_outputs[0])
 
     mask = _expand_mask(attention_mask, encoder_hidden_state.dtype)
     dec_mask = _expand_mask(decoder_attention_mask, decoder_hidden_state.dtype)
-    cross_mask = self.make_cross_mask(attention_mask, decoder_attention_mask, dec_mask.dtype)
+    cross_mask = self.make_cross_mask(attention_mask, decoder_attention_mask, decoder_hidden_state.dtype)
 
     graformer_hidden_state = self.graformer(
       encoder_hidden_states=encoder_hidden_state,
-      encoder_attention_mask=attention_mask,
+      encoder_attention_mask=mask,
       decoder_hidden_states=decoder_hidden_state,
-      decoder_attention_mask=decoder_attention_mask,
+      decoder_attention_mask=dec_mask,
       cross_attention_mask=cross_mask,
       output_attentions=output_attentions,
     )
-    
-    output_hidden_states = self.decoder_head(decoder_hidden_state + graformer_hidden_state)
+
+    output_hidden_states = self.pooler2(decoder_hidden_state + graformer_hidden_state)
+    output_hidden_states = self.decoder_head(output_hidden_states)
 
     return output_hidden_states
 

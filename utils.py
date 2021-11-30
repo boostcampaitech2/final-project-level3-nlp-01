@@ -13,8 +13,8 @@ def read_yaml(cfg):
 def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switch_language_pair=False):
     def preprocess_function(examples, max_length, max_target_length):
 
-        src_sentence = examples["encoder"] if not switch_language_pair else examples["decoder"]
-        tgt_sentence = examples["decoder"] if not switch_language_pair else examples["encoder"]
+        src_sentence = examples["korean"] if not switch_language_pair else examples["japanese"]
+        tgt_sentence = examples["japanese"] if not switch_language_pair else examples["korean"]
         
         tgt_sentence = [decoder_tokenizer.bos_token + ex for ex in tgt_sentence]
 
