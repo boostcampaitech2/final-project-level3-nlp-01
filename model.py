@@ -65,6 +65,8 @@ class GrafomerModel(nn.Module):
     self.encoder = getattr(__import__("transformers"), cfg.encoder.model).from_pretrained(enc_name)
     self.decoder = getattr(__import__("transformers"), cfg.decoder.model).from_pretrained(dec_name)
 
+    self.config = self.decoder.config  # for compatibility in generate method
+
     self.decoder_body = getattr(self.decoder, cfg.decoder.body)
     self.decoder_head = getattr(self.decoder, cfg.decoder.head)
 
