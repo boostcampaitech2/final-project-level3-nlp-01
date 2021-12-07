@@ -2,7 +2,7 @@ import yaml
 import numpy as np
 from dataclasses import dataclass
 from typing import Optional, Union, Any
-from datasets import load_from_disk
+from datasets import load_dataset
 from transformers import BatchEncoding
 
 
@@ -15,13 +15,14 @@ def read_yaml(cfg):
     return model_args, data_args, training_args
 
 
-def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switch_language_pair=False):
+def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switch_language_pair=False, need_prefix=True):
     def preprocess_function(examples, max_length, max_target_length):
 
-        src_sentence = examples["encoder"] if not switch_language_pair else examples["decoder"]
-        tgt_sentence = examples["decoder"] if not switch_language_pair else examples["encoder"]
+        src_sentence = examples["text"] if not switch_language_pair else examples["target"]
+        tgt_sentence = examples["target"] if not switch_language_pair else examples["text"]
         
-        tgt_sentence = [decoder_tokenizer.bos_token + ex for ex in tgt_sentence]
+        if need_prefix:
+            tgt_sentence = [decoder_tokenizer.bos_token + ex for ex in tgt_sentence]
 
         model_inputs = encoder_tokenizer(src_sentence, max_length=max_length, padding=False, truncation=True)
         decoder_inputs = decoder_tokenizer(tgt_sentence, max_length=max_target_length, padding=False, truncation=True)
@@ -61,8 +62,8 @@ def compute_metrics(eval_preds):
 
 
 def load_data(path):
-    raw_dataset = load_from_disk(path)
-    return raw_dataset["train"], raw_dataset["validation"]
+    _train, _valid = load_dataset(path, split=["train[1%:]", "train[:1%]"], use_auth_token="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")
+    return _train, _valid
 
 
 @dataclass

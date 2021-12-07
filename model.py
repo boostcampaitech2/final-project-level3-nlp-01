@@ -65,7 +65,7 @@ class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin
 
         self.config = self.decoder.config  # for compatibility in generate method
         self.config.is_encoder_decoder = True
-        self.config.decoder_start_token_id = 250100
+        self.config.decoder_start_token_id = cfg.decoder.decoder_start_token_id
         print(self.config)
 
         self.decoder_body = getattr(self.decoder, cfg.decoder.body)
@@ -73,9 +73,10 @@ class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin
 
         self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
         
+        self.embed_dim = cfg.decoder.embed_dim
         self.graft_module = GraftAttentionModule(self.bart_config, cfg.graft_module_config)
-        self.pooler = nn.Linear(1024, 768)
-        self.pooler2 = nn.Linear(768, 1024)
+        self.pooler = nn.Linear(self.embed_dim, 768)
+        self.pooler2 = nn.Linear(768, self.embed_dim)
     
     def get_encoder(self):
         return self.encoder

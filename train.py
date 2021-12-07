@@ -29,7 +29,7 @@ def main(cfg):
     
     # Config
     print("\n====== Using Hydra Configurations ======")
-    print(OmegaConf.to_yaml(cfg))
+    print(OmegaConf.to_yaml(cfg, resolve=True))
     
     if cfg.train_config.seed:
         logger.info(f"set the seed in ``random``, ``numpy``, ``torch`` at {cfg.train_config.seed}")
@@ -44,22 +44,35 @@ def main(cfg):
     model = GrafomerModel(enc_name, dec_name, cfg)
     print(f"number of model parameters: {model.num_parameters()}")
     
+    # Temp: 만약 decoder tokenizer에 bos token 추가가 필요하다면 주석 해제
+    # special_tokens_dict = {"additional_special_tokens": [cfg.decoder.bos_token]}
+    # decoder_tokenizer.add_special_tokens(special_tokens_dict=special_tokens_dict)
+    # model.decoder.resize_token_embeddings(len(decoder_tokenizer))
+    # decoder_tokenizer_tokenizer.bos_token = cfg.decoder.bos_token
+    
+    # Temp: 따로 모델에 bos token의 embedding을 늘려줄 필요가 없을 때는 위 주석 코드 말고 여기만 사용
+    # e.g. 중국어 gpt는 bert tokenizer를 사용해서 모델 임베딩은 바꿔줄 필요없이 bos token으로 cls 토큰을 설정해주시만 하면 됨.
+    if decoder_tokenizer.bos_token is None:
+        decoder_tokenizer.bos_token = cfg.decoder.bos_token
+
     
     # TODO Data Loader
     # train_set, valid_set = load_data(cfg.data.ko_ja)
-    tokenized_train, tokenized_valid = load_data("/opt/ml/final-project-level3-nlp-01/data/preprocessed_ko_ja2")
+    train_set, valid_set = load_data(cfg.train_config.data_path)
     
-    # fn_kwargs = cfg.data.fn_kwargs
-    # tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch), 
-    #                                 num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
-    # tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
-    #                                 num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
-    
+    fn_kwargs = cfg.data.fn_kwargs
+    tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
+                                    num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
+    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
+                                    num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
+
     data_collator = CustomDataCollator(label_pad_token_id=decoder_tokenizer.pad_token_id)
     train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
                                   shuffle=True, drop_last=True, num_workers=5, collate_fn=data_collator)
     valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
                                   shuffle=False, drop_last=False, num_workers=5, collate_fn=data_collator)
+
+    print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
 
     # TODO Decoder Model Freeze
@@ -159,10 +172,10 @@ def main(cfg):
                     with torch.no_grad():
                         
                         # decoder_input_ids = torch.ones((cfg.train_config.batch_size, 1), dtype=torch.long, device=device) * decoder_tokenizer.bos_token_id
-                        generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[0] * 1.3),
+                        generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
                                                         # decoder_input_ids=eval_batch["decoder_input_ids"], decoder_attention_mask=eval_batch["decoder_attention_mask"],
                                                         pad_token_id=decoder_tokenizer.pad_token_id, eos_token_id=decoder_tokenizer.eos_token_id, bos_token_id=decoder_tokenizer.bos_token_id,
-                                                        num_beams=5)
+                                                        do_sample=True, top_k=50, top_p=0.95)
                         labels = eval_batch["labels"]
 
                         decoded_preds = decoder_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
@@ -174,7 +187,7 @@ def main(cfg):
 
                     
                     eval_progress_bar.update()
-                    if eval_step == 100: 
+                    if eval_step == 1000: 
                         break
                 
                 eval_results = sacre_bleu.compute()
