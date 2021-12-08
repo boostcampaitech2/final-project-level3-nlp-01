@@ -1,9 +1,10 @@
-import yaml
+import random
 import math
 import logging
 import argparse
 from tqdm import tqdm
 
+import yaml
 import hydra
 from omegaconf import OmegaConf
 
@@ -11,24 +12,28 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from datasets import load_metric
-from transformers import AutoConfig, AutoTokenizer, set_seed, default_data_collator, get_cosine_schedule_with_warmup, AdamW
+from transformers import AutoConfig, AutoTokenizer
+from transformers import set_seed, get_cosine_schedule_with_warmup, AdamW
 
 from model import GrafomerModel
-from utils import preprocess_function_with_setting, load_data
+from utils import preprocess_function_with_setting, load_data, postprocess_text, CustomDataCollator
 
-# logger = logging.getLogger('Training')
-# formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
-# file_handler = logging.FileHandler(filename='train.log')
-# logger.addHandler(file_handler)
+logger = logging.getLogger(__name__)
+formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
+file_handler = logging.FileHandler(filename='train.log')
+logger.addHandler(file_handler)
 
 
 @hydra.main(config_path='./configs', config_name="config.yaml")
 def main(cfg):
-    # Config
-    # logger.info("Load Arguments")
     
-    # set_seed(training_args.seed)
-    print(OmegaConf.to_yaml(cfg))
+    # Config
+    print("\n====== Using Hydra Configurations ======")
+    print(OmegaConf.to_yaml(cfg, resolve=True))
+    
+    if cfg.train_config.seed:
+        logger.info(f"set the seed in ``random``, ``numpy``, ``torch`` at {cfg.train_config.seed}")
+        set_seed(cfg.train_config.seed)
     
     enc_name = cfg.encoder.name
     dec_name = cfg.decoder.name
@@ -37,22 +42,37 @@ def main(cfg):
     decoder_tokenizer = getattr(__import__("transformers"), cfg.decoder.tokenizer).from_pretrained(dec_name) # target lang
     
     model = GrafomerModel(enc_name, dec_name, cfg)
+    print(f"number of model parameters: {model.num_parameters()}")
     
+    # Temp: 만약 decoder tokenizer에 bos token 추가가 필요하다면 주석 해제
+    # special_tokens_dict = {"additional_special_tokens": [cfg.decoder.bos_token]}
+    # decoder_tokenizer.add_special_tokens(special_tokens_dict=special_tokens_dict)
+    # model.decoder.resize_token_embeddings(len(decoder_tokenizer))
+    # decoder_tokenizer_tokenizer.bos_token = cfg.decoder.bos_token
+    
+    # Temp: 따로 모델에 bos token의 embedding을 늘려줄 필요가 없을 때는 위 주석 코드 말고 여기만 사용
+    # e.g. 중국어 gpt는 bert tokenizer를 사용해서 모델 임베딩은 바꿔줄 필요없이 bos token으로 cls 토큰을 설정해주시만 하면 됨.
+    if decoder_tokenizer.bos_token is None:
+        decoder_tokenizer.bos_token = cfg.decoder.bos_token
+
     
     # TODO Data Loader
     # train_set, valid_set = load_data(cfg.data.ko_ja)
-    tokenized_train, tokenized_valid = load_data("/opt/ml/final-project-level3-nlp-01/data/preprocessed_ko_ja")
+    train_set, valid_set = load_data(cfg.train_config.data_path)
     
-    # fn_kwargs = cfg.data.fn_kwargs
-    # tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch), 
-    #                                 num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
-    # tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
-    #                                 num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
-    
+    fn_kwargs = cfg.data.fn_kwargs
+    tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
+                                    num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
+    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
+                                    num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
+
+    data_collator = CustomDataCollator(label_pad_token_id=decoder_tokenizer.pad_token_id)
     train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
-                                  shuffle=True, drop_last=True, num_workers=5, collate_fn=default_data_collator)
+                                  shuffle=True, drop_last=True, num_workers=5, collate_fn=data_collator)
     valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
-                                  shuffle=False, drop_last=False, num_workers=5, collate_fn=default_data_collator)
+                                  shuffle=False, drop_last=False, num_workers=5, collate_fn=data_collator)
+
+    print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
 
     # TODO Decoder Model Freeze
@@ -60,13 +80,18 @@ def main(cfg):
         param.requires_grad = False
     
     # TODO: Train
-    metric = load_metric("sacrebleu")
+    sacre_bleu = load_metric("sacrebleu")
 
     total_steps = len(train_dataloader)  // cfg.train_config.gradient_accumulation_steps * cfg.train_config.num_train_epochs
     steps_per_epoch = len(train_dataloader) // cfg.train_config.gradient_accumulation_steps
     warmup_steps = int(total_steps ** 0.05)
     eval_steps = cfg.train_config.eval_steps
     
+    logger.info(
+        f"num train dataloader: {len(train_dataloader)} | gradient accumulaion steps: {cfg.train_config.gradient_accumulation_steps} | num_train_epochs: {cfg.train_config.num_train_epochs} | "
+        f"total steps: {total_steps} | steps per epoch: {steps_per_epoch}"
+    )
+
     no_decay=['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {
@@ -80,7 +105,7 @@ def main(cfg):
     ]
 
     optimizer = AdamW(optimizer_grouped_parameters, lr=cfg.train_config.lr)
-    scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+    scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     scaler = torch.cuda.amp.GradScaler()
 
     loss_function = nn.CrossEntropyLoss(ignore_index=decoder_tokenizer.pad_token_id)
@@ -92,16 +117,16 @@ def main(cfg):
     for epoch in range(cfg.train_config.num_train_epochs):
         
         model.train()
-        progress_bar = tqdm(train_dataloader, total=steps_per_epoch, ncols=100)
+        progress_bar = tqdm(range(steps_per_epoch), ncols=100)
 
-        for step, batch in enumerate(progress_bar):
+        for step, batch in enumerate(train_dataloader, 1):
 
             batch = {k: v.to(device) for k, v in batch.items()}
 
             with torch.cuda.amp.autocast(): # 16 bit training 적용
             
-                logits = model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
-                logits = logits.view(-1, len(decoder_tokenizer))
+                outputs = model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
+                logits = outputs.logits.view(-1, len(decoder_tokenizer))
                 
                 labels = batch["labels"].view(-1)
                 loss = loss_function(logits, labels)
@@ -126,54 +151,66 @@ def main(cfg):
 
 
             # TODO: Do eval
-            if completed_steps % eval_steps == 0 :
+            if step % (eval_steps * cfg.train_config.gradient_accumulation_steps) == 0 :
                 
                 model.eval()
-                eval_progress_bar = tqdm(valid_dataloader, total=len(valid_dataloader), ncols=100)
+                eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
                 eval_loss = 0
                 preds, gt = [], []
-                sample_indices = random.choices(range(100000), k=3)
+                sample_indices = random.choices(range(100), k=50)
 
-                for step, batch in enumerate(eval_progress_bar):
+                for eval_step, eval_batch in enumerate(valid_dataloader):
 
-                    batch = {k: v.to(device) for k, v in batch.items()}
+                    eval_batch = {k: v.to(device) for k, v in eval_batch.items()}
 
+                    """
+                    output = my_model.generate(input_ids, attention_mask=attention_mask , max_length=1025,
+                    pad_token_id=pad_token_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id,
+                    num_beams=5, temperature=0.9, top_k=50, top_p=1.0, 
+                    repetition_penalty=1.0, use_cache=True)
+                    """
                     with torch.no_grad():
                         
-                        logits = model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
-                        logits = logits.view(-1, len(decoder_tokenizer))
+                        # decoder_input_ids = torch.ones((cfg.train_config.batch_size, 1), dtype=torch.long, device=device) * decoder_tokenizer.bos_token_id
+                        generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
+                                                        # decoder_input_ids=eval_batch["decoder_input_ids"], decoder_attention_mask=eval_batch["decoder_attention_mask"],
+                                                        pad_token_id=decoder_tokenizer.pad_token_id, eos_token_id=decoder_tokenizer.eos_token_id, bos_token_id=decoder_tokenizer.bos_token_id,
+                                                        do_sample=True, top_k=50, top_p=0.95)
+                        labels = eval_batch["labels"]
 
-                        labels = batch["labels"].view(-1)
-                        loss = loss_function(logits, labels)
+                        decoded_preds = decoder_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+                        decoded_labels = decoder_tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-                        eval_loss += loss
+                        decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+                        sacre_bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
+                        preds.extend(decoded_preds); gt.extend(decoded_labels)
 
+                    
                     eval_progress_bar.update()
-                    eval_progress_bar.set_description(
-                        f"Eval: [{completed_steps}] "
-                        f"Loss: {eval_loss/step:.3f}"
-                    )
+                    if eval_step == 1000: 
+                        break
+                
+                eval_results = sacre_bleu.compute()
+                logger.info(
+                    f"{completed_steps} steps evaluation results \n"
+                    f"{eval_results} \n"
+                )
 
-                    if step in sample_indices :
-                        preds += torch.argmax(logits, dim=-1).view(-1, 1024).detach().cpu().tolist()
-                        gt += labels.view(-1, 1024).detach().cpu().tolist()
+                logger.info(
+                    f"decoded sentences: "
+                )
+                for i, n in enumerate(sample_indices, 1):
+                    logger.info(f"[{i}] (gt) {gt[n]}  ->  (pred) {preds[n]}")
                 
                 eval_progress_bar.close()
+                
+                # TODO: Model Checkpointing
+                torch.save(model.state_dict(), f"{cfg.train_config.save_dir}/checkpoint_{completed_steps}.pt")
 
-                # TODO: Evaluation Metric & Model Checkpointing 구현
-                """
-                sacreBLEU score? predict 결과를 일부 sampling 해서 로깅? 
-                """
-
-        
+                model.train()
+                        
         progress_bar.close()
 
-
-        
-        
-            
-        # TODO: Save Model?
-            
     
 
 if __name__ == "__main__":
