@@ -1,0 +1,9 @@
+name: skt/ko-gpt-trinity-1.2B-v0.5
+model: AutoModelWithLMHead
+body: transformer
+head: lm_head
+tokenizer: AutoTokenizer
+embed_dim: 1920
+bos_token: "<s>"
+decoder_start_token_id: 0
+need_prefix: True
