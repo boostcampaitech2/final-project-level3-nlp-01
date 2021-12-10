@@ -203,12 +203,18 @@ def main(cfg):
                     logger.info(f"[{i}] (gt) {gt[n]}  ->  (pred) {preds[n]}")
                 
                 eval_progress_bar.close()
-                
-                # TODO: Model Checkpointing
-                torch.save(model.state_dict(), f"{cfg.train_config.save_dir}/checkpoint_{completed_steps}.pt")
 
+                # TODO: Model Checkpointing
+                cur_lang = cfg.lang   # 여기에는 모델이 현재 어떤 언어를 학습하는지를 알 수 있게 변수를 받는 코드를 짤거에요!
+
+                # 그리고 아래에서는 models 폴더 아래 encoder, decoder, graft_module 폴더에 각각 모델을 저장해줄겁니다.
+                # 인코더는 하나를 계속 불러다가 쓰면 되구요! 디코더랑 graft module은 언어 별로 따로 저장이 되어야 해요! 
+                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
+                
                 model.train()
-                        
+                
         progress_bar.close()
 
     
