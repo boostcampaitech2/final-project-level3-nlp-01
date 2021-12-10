@@ -66,7 +66,7 @@ def main(cfg):
     tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
                                     num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
 
-    data_collator = CustomDataCollator(label_pad_token_id=decoder_tokenizer.pad_token_id)
+    data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
     train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
                                   shuffle=True, drop_last=True, num_workers=5, collate_fn=data_collator)
     valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
@@ -81,6 +81,7 @@ def main(cfg):
     
     # TODO: Train
     sacre_bleu = load_metric("sacrebleu")
+    bert_score = load_metric("bertscore")
 
     total_steps = len(train_dataloader)  // cfg.train_config.gradient_accumulation_steps * cfg.train_config.num_train_epochs
     steps_per_epoch = len(train_dataloader) // cfg.train_config.gradient_accumulation_steps
@@ -112,6 +113,7 @@ def main(cfg):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
 
+    step = 0
     completed_steps = 0
     model.to(device)
     for epoch in range(cfg.train_config.num_train_epochs):
@@ -119,7 +121,7 @@ def main(cfg):
         model.train()
         progress_bar = tqdm(range(steps_per_epoch), ncols=100)
 
-        for step, batch in enumerate(train_dataloader, 1):
+        for batch in train_dataloader:
 
             batch = {k: v.to(device) for k, v in batch.items()}
 
@@ -132,6 +134,7 @@ def main(cfg):
                 loss = loss_function(logits, labels)
 
                 scaler.scale(loss / cfg.train_config.gradient_accumulation_steps).backward()
+                step += 1
 
 
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
@@ -157,7 +160,7 @@ def main(cfg):
                 eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
                 eval_loss = 0
                 preds, gt = [], []
-                sample_indices = random.choices(range(100), k=50)
+                sample_indices = random.choices(range(500), k=50)
 
                 for eval_step, eval_batch in enumerate(valid_dataloader):
 
@@ -183,6 +186,7 @@ def main(cfg):
 
                         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
                         sacre_bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
+                        bert_score.add_batch(predictions=decoded_preds, references=decoded_labels)
                         preds.extend(decoded_preds); gt.extend(decoded_labels)
 
                     
@@ -220,12 +224,5 @@ def main(cfg):
     
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train model.")
-    parser.add_argument(
-        "--config",
-        default="configs/train.yaml",
-        type=str,
-        help="config file",
-    )
-    args = parser.parse_args()
+    
     main()
