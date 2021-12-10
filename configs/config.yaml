@@ -1,7 +1,7 @@
 defaults:
   - encoder: bert
   - data: default
-  - decoder: cn_gpt
+  - decoder: ko_gpt
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
   - _self_
@@ -18,7 +18,7 @@ train_config:
   num_train_epochs: 100
   gradient_accumulation_steps: 32
   eval_steps: 1000
-  data_path: ${data.kr_cn}
+  data_path: ${data.kr_en}
   save_dir: /opt/ml/final-project-level3-nlp-01/models
 
-lang: english
+lang: korean

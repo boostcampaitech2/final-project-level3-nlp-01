@@ -68,9 +68,9 @@ def main(cfg):
 
     data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
     train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
-                                  shuffle=True, drop_last=True, num_workers=5, collate_fn=data_collator)
+                                  shuffle=True, drop_last=True, num_workers=8, collate_fn=data_collator)
     valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
-                                  shuffle=False, drop_last=False, num_workers=5, collate_fn=data_collator)
+                                  shuffle=False, drop_last=False, num_workers=8, collate_fn=data_collator)
 
     print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
@@ -194,10 +194,13 @@ def main(cfg):
                     if eval_step == 1000: 
                         break
                 
-                eval_results = sacre_bleu.compute()
+                sacre_bleu_results = sacre_bleu.compute()
+                bert_score_results = bert_score.compute()
+
                 logger.info(
                     f"{completed_steps} steps evaluation results \n"
-                    f"{eval_results} \n"
+                    f"{sacre_bleu_results} \n"
+                    f"{bert_score_results} \n"
                 )
 
                 logger.info(
@@ -209,11 +212,9 @@ def main(cfg):
                 eval_progress_bar.close()
 
                 # TODO: Model Checkpointing
-                cur_lang = cfg.lang   # 여기에는 모델이 현재 어떤 언어를 학습하는지를 알 수 있게 변수를 받는 코드를 짤거에요!
+                cur_lang = cfg.lang
 
-                # 그리고 아래에서는 models 폴더 아래 encoder, decoder, graft_module 폴더에 각각 모델을 저장해줄겁니다.
-                # 인코더는 하나를 계속 불러다가 쓰면 되구요! 디코더랑 graft module은 언어 별로 따로 저장이 되어야 해요! 
-                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/checkpoint_{completed_steps}.pt")
                 torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
                 torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
                 
