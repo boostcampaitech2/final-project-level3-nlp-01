@@ -66,11 +66,11 @@ def main(cfg):
     tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
                                     num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
 
-    data_collator = CustomDataCollator(label_pad_token_id=decoder_tokenizer.pad_token_id)
+    data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
     train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
-                                  shuffle=True, drop_last=True, num_workers=5, collate_fn=data_collator)
+                                  shuffle=True, drop_last=True, num_workers=8, collate_fn=data_collator)
     valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
-                                  shuffle=False, drop_last=False, num_workers=5, collate_fn=data_collator)
+                                  shuffle=False, drop_last=False, num_workers=8, collate_fn=data_collator)
 
     print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
@@ -194,10 +194,13 @@ def main(cfg):
                     if eval_step == 1000: 
                         break
                 
-                eval_results = sacre_bleu.compute()
+                sacre_bleu_results = sacre_bleu.compute()
+                bert_score_results = bert_score.compute()
+
                 logger.info(
                     f"{completed_steps} steps evaluation results \n"
-                    f"{eval_results} \n"
+                    f"{sacre_bleu_results} \n"
+                    f"{bert_score_results} \n"
                 )
 
                 logger.info(
@@ -207,12 +210,16 @@ def main(cfg):
                     logger.info(f"[{i}] (gt) {gt[n]}  ->  (pred) {preds[n]}")
                 
                 eval_progress_bar.close()
-                
-                # TODO: Model Checkpointing (언어 pair 별 GraftAttentionModule과 encoder, decoder weight 각각 저장 필요.)
-                torch.save(model.state_dict(), f"{cfg.train_config.save_dir}/checkpoint_{completed_steps}.pt")
 
+                # TODO: Model Checkpointing
+                cur_lang = cfg.lang
+
+                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/checkpoint_{completed_steps}.pt")
+                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
+                
                 model.train()
-                        
+                
         progress_bar.close()
 
     

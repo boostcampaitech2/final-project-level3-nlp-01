@@ -11,11 +11,14 @@ from transformers.models.bart.modeling_bart import _expand_mask, _make_causal_ma
 
 
 class GraftAttentionModule(nn.Module):
-    def __init__(self, bart_config, model_config):
+    def __init__(self, bart_config, model_config, embed_dim):
         super().__init__()
         
+        self.embed_dim = embed_dim
         self.graft_encoder = nn.ModuleList([BartEncoderLayer(bart_config) for _ in range(model_config["num_enc_layer"])])
         self.graft_decoder = nn.ModuleList([BartDecoderLayer(bart_config) for _ in range(model_config["num_dec_layer"])])
+        self.graft_input_pooler = nn.Linear(self.embed_dim, 768)
+        self.graft_output_pooler = nn.Linear(768, self.embed_dim)
 
     def forward(
         self, 
@@ -30,6 +33,8 @@ class GraftAttentionModule(nn.Module):
         head_mask=None,
         ):
 
+        decoder_hidden_states = self.graft_input_pooler(decoder_hidden_states)
+        
         for idx, encoder_layer in enumerate(self.graft_encoder):
             encoder_layer_outputs = encoder_layer(
                 encoder_hidden_states, 
@@ -52,6 +57,8 @@ class GraftAttentionModule(nn.Module):
                 use_cache=use_cache,
             )
             decoder_hidden_states = decoder_layer_outputs[0]
+        
+        decoder_hidden_states = self.graft_output_pooler(decoder_hidden_states)
 
         return decoder_hidden_states
 
@@ -73,10 +80,8 @@ class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin
 
         self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
         
-        self.embed_dim = cfg.decoder.embed_dim
-        self.graft_module = GraftAttentionModule(self.bart_config, cfg.graft_module_config)
-        self.pooler = nn.Linear(self.embed_dim, 768)
-        self.pooler2 = nn.Linear(768, self.embed_dim)
+        self.decoder_embed_dim = cfg.decoder.embed_dim
+        self.graft_module = GraftAttentionModule(self.bart_config, cfg.graft_module_config, self.decoder_embed_dim)
     
     def get_encoder(self):
         return self.encoder
@@ -136,7 +141,7 @@ class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin
 
 
         encoder_hidden_state = encoder_outputs[0]
-        decoder_hidden_state = self.pooler(decoder_outputs[0])
+        decoder_hidden_state = decoder_outputs[0]
 
         graformer_hidden_state = self.graft_module(
             encoder_hidden_states=encoder_hidden_state,
@@ -147,7 +152,7 @@ class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin
             output_attentions=output_attentions,
         )
 
-        output_hidden_states = self.pooler2(decoder_hidden_state + graformer_hidden_state)
+        output_hidden_states = decoder_hidden_state + graformer_hidden_state
         output_hidden_states = self.decoder_head(output_hidden_states)
 
         return Seq2SeqLMOutput(
