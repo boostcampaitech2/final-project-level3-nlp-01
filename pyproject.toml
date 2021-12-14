@@ -17,6 +17,7 @@ ipykernel = "^6.6.0"
 ipywidgets = "^7.6.5"
 protobuf = "^3.19.1"
 sacrebleu = "^2.0.0"
+bert-score = "^0.3.11"
 
 [tool.poetry.dev-dependencies]
 
