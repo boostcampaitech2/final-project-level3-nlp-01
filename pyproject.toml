@@ -16,6 +16,7 @@ sentencepiece = "^0.1.96"
 ipykernel = "^6.6.0"
 ipywidgets = "^7.6.5"
 protobuf = "^3.19.1"
+sacrebleu = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 

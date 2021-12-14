@@ -861,6 +861,22 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "portalocker"
+version = "2.3.2"
+description = "Wraps the portalocker recipe for easy usage"
+category = "main"
+optional = false
+python-versions = ">=3.5"
+
+[package.dependencies]
+pywin32 = {version = ">=226", markers = "platform_system == \"Windows\""}
+
+[package.extras]
+docs = ["sphinx (>=1.7.1)"]
+redis = ["redis"]
+tests = ["pytest (>=5.4.1)", "pytest-cov (>=2.8.1)", "sphinx (>=3.0.3)", "pytest-flake8 (>=1.0.5)", "pytest-mypy (>=0.8.0)", "redis"]
+
+[[package]]
 name = "prometheus-client"
 version = "0.12.0"
 description = "Python client for the Prometheus monitoring system."
@@ -1034,6 +1050,24 @@ socks = ["PySocks (>=1.5.6,!=1.5.7)", "win-inet-pton"]
 use_chardet_on_py3 = ["chardet (>=3.0.2,<5)"]
 
 [[package]]
+name = "sacrebleu"
+version = "2.0.0"
+description = "Hassle-free computation of shareable, comparable, and reproducible BLEU, chrF, and TER scores"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+colorama = "*"
+numpy = ">=1.17"
+portalocker = "*"
+regex = "*"
+tabulate = ">=0.8.9"
+
+[package.extras]
+ja = ["mecab-python3 (==1.0.3)", "ipadic (>=1.0,<2.0)"]
+
+[[package]]
 name = "sacremoses"
 version = "0.0.46"
 description = "SacreMoses"
@@ -1076,6 +1110,17 @@ description = "Python 2 and 3 compatibility utilities"
 category = "main"
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
+
+[[package]]
+name = "tabulate"
+version = "0.8.9"
+description = "Pretty-print tabular data"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+widechars = ["wcwidth"]
 
 [[package]]
 name = "terminado"
@@ -1303,7 +1348,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "d6c2a99e754f6ee7780a45722d430364eae3ac1b4d3637782e1e37adb03efa57"
+content-hash = "4cded3c17d75f223435eb50d3b42614043d15281ac6b16399551dba7de93e536"
 
 [metadata.files]
 aiohttp = [
@@ -1979,6 +2024,10 @@ pickleshare = [
     {file = "pickleshare-0.7.5-py2.py3-none-any.whl", hash = "sha256:9649af414d74d4df115d5d718f82acb59c9d418196b7b4290ed47a12ce62df56"},
     {file = "pickleshare-0.7.5.tar.gz", hash = "sha256:87683d47965c1da65cdacaf31c8441d12b8044cdec9aca500cd78fc2c683afca"},
 ]
+portalocker = [
+    {file = "portalocker-2.3.2-py2.py3-none-any.whl", hash = "sha256:d8c9f7c542e768dbef006a3e49875046ca170d2d41ca712080719110bd066cc4"},
+    {file = "portalocker-2.3.2.tar.gz", hash = "sha256:75cfe02f702737f1726d83e04eedfa0bda2cc5b974b1ceafb8d6b42377efbd5f"},
+]
 prometheus-client = [
     {file = "prometheus_client-0.12.0-py2.py3-none-any.whl", hash = "sha256:317453ebabff0a1b02df7f708efbab21e3489e7072b61cb6957230dd004a0af0"},
     {file = "prometheus_client-0.12.0.tar.gz", hash = "sha256:1b12ba48cee33b9b0b9de64a1047cbd3c5f2d0ab6ebcead7ddda613a750ec3c5"},
@@ -2286,6 +2335,10 @@ requests = [
     {file = "requests-2.26.0-py2.py3-none-any.whl", hash = "sha256:6c1246513ecd5ecd4528a0906f910e8f0f9c6b8ec72030dc9fd154dc1a6efd24"},
     {file = "requests-2.26.0.tar.gz", hash = "sha256:b8aa58f8cf793ffd8782d3d8cb19e66ef36f7aba4353eec859e74678b01b07a7"},
 ]
+sacrebleu = [
+    {file = "sacrebleu-2.0.0-py3-none-any.whl", hash = "sha256:1acae0221e27c23c4987834fd17b284b4addc6556941c2097c4d618baa2d67af"},
+    {file = "sacrebleu-2.0.0.tar.gz", hash = "sha256:51fb69b6683f1b9999cd180143bb6b21d7841744537c9aab235cfe676550f0cf"},
+]
 sacremoses = [
     {file = "sacremoses-0.0.46-py3-none-any.whl", hash = "sha256:f95f80d09d3501fed5c1d3056d9212b40599b08cb27f185d38ff0063be8ddd09"},
     {file = "sacremoses-0.0.46.tar.gz", hash = "sha256:4b1fe8813915c7a2647728a46ebbf0d1a65eabb7ca05ba10efeb0548547eea38"},
@@ -2341,6 +2394,10 @@ sentencepiece = [
 six = [
     {file = "six-1.16.0-py2.py3-none-any.whl", hash = "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"},
     {file = "six-1.16.0.tar.gz", hash = "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926"},
+]
+tabulate = [
+    {file = "tabulate-0.8.9-py3-none-any.whl", hash = "sha256:d7c013fe7abbc5e491394e10fa845f8f32fe54f8dc60c6622c6cf482d25d47e4"},
+    {file = "tabulate-0.8.9.tar.gz", hash = "sha256:eb1d13f25760052e8931f2ef80aaf6045a6cceb47514db8beab24cded16f13a7"},
 ]
 terminado = [
     {file = "terminado-0.12.1-py3-none-any.whl", hash = "sha256:09fdde344324a1c9c6e610ee4ca165c4bb7f5bbf982fceeeb38998a988ef8452"},
