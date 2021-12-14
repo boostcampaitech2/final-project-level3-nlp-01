@@ -13,6 +13,9 @@ datasets = "^1.16.1"
 hydra-core = "^1.1.1"
 hydra-colorlog = "^1.1.0"
 sentencepiece = "^0.1.96"
+ipykernel = "^6.6.0"
+ipywidgets = "^7.6.5"
+protobuf = "^3.19.1"
 
 [tool.poetry.dev-dependencies]
 
