@@ -12,6 +12,7 @@ tqdm = "^4.62.3"
 datasets = "^1.16.1"
 hydra-core = "^1.1.1"
 hydra-colorlog = "^1.1.0"
+sentencepiece = "^0.1.96"
 
 [tool.poetry.dev-dependencies]
 
