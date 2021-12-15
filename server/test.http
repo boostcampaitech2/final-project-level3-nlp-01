@@ -1,0 +1,8 @@
+POST http://0.0.0.0:8000/translate HTTP/1.1
+content-type: application/json
+
+{
+    "text": "where are you from?",
+    "source_lang": "en",
+    "target_lang": "es"
+}
