@@ -1,7 +1,13 @@
 import streamlit as st
+import argparse
 
 from confirm_button_hack import cache_on_button_press
 from create_text import sendMessage
+
+parser = argparse.ArgumentParser(description="This app lists animals")
+
+parser.add_argument("--pwd", type=str, default="password", help="root password")
+args = parser.parse_args()
 
 st.set_page_config(
     page_title="런앤런팀 앵무새톡",
@@ -10,7 +16,7 @@ st.set_page_config(
     page_icon=None,
 )
 
-root_password = "password"
+root_password = args.pwd
 
 
 st.sidebar.image("https://i.imgur.com/145udIs.png")
