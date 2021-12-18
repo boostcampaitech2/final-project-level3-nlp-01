@@ -1,7 +1,13 @@
 import streamlit as st
+import argparse
 
 from confirm_button_hack import cache_on_button_press
 from create_text import sendMessage
+
+parser = argparse.ArgumentParser(description="This app lists animals")
+
+parser.add_argument("--pwd", type=str, default="password", help="root password")
+args = parser.parse_args()
 
 st.set_page_config(
     page_title="런앤런팀 앵무새톡",
@@ -10,7 +16,7 @@ st.set_page_config(
     page_icon=None,
 )
 
-root_password = "password"
+root_password = args.pwd
 
 
 st.sidebar.image("https://i.imgur.com/145udIs.png")
@@ -44,6 +50,7 @@ def main():
     )
     sentence2 = col1.text_input("Message", key="user2_msg")
     btn2 = col1.button("Send", key="send2")
+    clear_btn = col1.button("Clear", key="clear")
 
     message_container = col2.container()
     message_container.write("")
@@ -55,6 +62,8 @@ def main():
         messages.append(sendMessage(sentence1, lang2, True))
     elif btn2:
         messages.append(sendMessage(sentence2, lang1, False))
+    elif clear_btn:
+        messages = []
     message_container.markdown(
         "".join(messages),
         unsafe_allow_html=True,
