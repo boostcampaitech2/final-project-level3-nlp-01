@@ -20,7 +20,7 @@ from teacher_model import GrafomerModel
 from student_model import StudentGrafomerModel
 from utils import preprocess_function_with_setting, load_data, postprocess_text, CustomDataCollator
 
-from loss import KDLoss
+from loss import DistilLoss, KDLoss
 from datasets import load_from_disk
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,9 @@ def main(cfg):
     
     teacher_model = GrafomerModel(enc_name, dec_name, cfg)
 
-    teacher_model.encoder.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/encoder/checkpoint_55000.pt'))
-    teacher_model.decoder.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/decoder/chinese/checkpoint_55000.pt'))
-    teacher_model.graft_module.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/graft_module/chinese/checkpoint_55000.pt'))
+    teacher_model.encoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/encoder/checkpoint_55000.pt'))
+    teacher_model.decoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/decoder/checkpoint_55000.pt'))
+    teacher_model.graft_module.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/graft_module/checkpoint_55000.pt'))
     
     student_model = StudentGrafomerModel(enc_name, dec_name, cfg, teacher_model)
     print(f"number of teacher model parameters: {teacher_model.num_parameters()}")
@@ -59,7 +59,7 @@ def main(cfg):
     if decoder_tokenizer.bos_token is None:
         decoder_tokenizer.bos_token = cfg.decoder.bos_token
 
-    raw_dataset = load_from_disk("/opt/ml/final-project-level3-nlp-01/cn_unified_dataset")
+    raw_dataset = load_from_disk("/opt/ml/data/cn_unified_dataset")
     train_set, valid_set = raw_dataset["train"], raw_dataset["validation"]
     
     fn_kwargs = cfg.data.fn_kwargs
@@ -110,7 +110,8 @@ def main(cfg):
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
-    loss_function = KDLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
+    # loss_function = KDLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
+    loss_function = DistilLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
     step = 0
     completed_steps = 0
     teacher_model.to(device)
@@ -132,8 +133,8 @@ def main(cfg):
                 student_outputs = student_model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
 
                 labels = batch["labels"].view(-1)
-                att_loss, rep_loss, pred_loss = loss_function(teacher_outputs, student_outputs, labels)
-                loss = att_loss + rep_loss + pred_loss
+                att_loss, rep_loss, pred_loss = loss_function(teacher_outputs, student_outputs, labels, batch["attention_mask"], batch["decoder_attention_mask"])
+                loss = att_loss*0.33 + rep_loss*0.33 + pred_loss*0.33
 
                 if cfg.train_config.gradient_accumulation_steps > 1:
                     loss = loss / cfg.train_config.gradient_accumulation_steps
@@ -142,7 +143,7 @@ def main(cfg):
                 step += 1
                 total_loss += loss
                 total_att_loss += att_loss / cfg.train_config.gradient_accumulation_steps
-                total_hidd_loss += hidd_loss / cfg.train_config.gradient_accumulation_steps
+                total_hidd_loss += rep_loss / cfg.train_config.gradient_accumulation_steps
                 total_pred_loss += pred_loss / cfg.train_config.gradient_accumulation_steps
 
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
@@ -164,7 +165,7 @@ def main(cfg):
                         f"Step [{step}] "
                         f"loss: {loss / update_step :.3f}, "
                         f"att loss: {total_att_loss / update_step :.3f}, "
-                        f"hidd loss: {total_rep_loss / update_step :.3f}, "
+                        f"hidd loss: {total_hidd_loss / update_step :.3f}, "
                         f"pred loss: {total_pred_loss / update_step :.3f}, "
                     )
                     total_loss, total_att_loss, total_hidd_loss, total_pred_loss = 0, 0, 0, 0
