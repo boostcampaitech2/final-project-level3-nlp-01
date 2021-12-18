@@ -142,7 +142,7 @@ def main(cfg):
                 step += 1
                 total_loss += loss
                 total_att_loss += att_loss / cfg.train_config.gradient_accumulation_steps
-                total_hidd_loss += rep_loss / cfg.train_config.gradient_accumulation_steps
+                total_hidd_loss += rep_loss / cfg.train_config.gradient_accumulation_steps 
                 total_pred_loss += pred_loss / cfg.train_config.gradient_accumulation_steps
 
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
