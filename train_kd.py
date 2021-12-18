@@ -142,7 +142,7 @@ def main(cfg):
                 step += 1
                 total_loss += loss
                 total_att_loss += att_loss / cfg.train_config.gradient_accumulation_steps
-                total_hidd_loss += hidd_loss / cfg.train_config.gradient_accumulation_steps
+                total_hidd_loss += rep_loss / cfg.train_config.gradient_accumulation_steps
                 total_pred_loss += pred_loss / cfg.train_config.gradient_accumulation_steps
 
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
@@ -155,7 +155,7 @@ def main(cfg):
                     progress_bar.update()
                     progress_bar.set_description(
                         f"Train: [{epoch + 1:03d}] "
-                        f"loss: {total_loss:.3f}, "
+                        f"loss: {loss:.3f}, "
                         f"lr: {optimizer.param_groups[0]['lr']:.7f}"
                     )
                     update_step += 1
@@ -164,7 +164,7 @@ def main(cfg):
                         f"Step [{step}] "
                         f"loss: {loss / update_step :.3f}, "
                         f"att loss: {total_att_loss / update_step :.3f}, "
-                        f"hidd loss: {total_rep_loss / update_step :.3f}, "
+                        f"hidd loss: {total_hidd_loss / update_step :.3f}, "
                         f"pred loss: {total_pred_loss / update_step :.3f}, "
                     )
                     total_loss, total_att_loss, total_hidd_loss, total_pred_loss = 0, 0, 0, 0
