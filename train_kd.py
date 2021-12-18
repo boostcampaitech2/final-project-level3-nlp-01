@@ -156,7 +156,7 @@ def main(cfg):
                     progress_bar.update()
                     progress_bar.set_description(
                         f"Train: [{epoch + 1:03d}] "
-                        f"loss: {total_loss:.3f}, "
+                        f"loss: {loss:.3f}, "
                         f"lr: {optimizer.param_groups[0]['lr']:.7f}"
                     )
                     update_step += 1
