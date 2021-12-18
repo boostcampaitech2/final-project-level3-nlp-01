@@ -50,6 +50,7 @@ def main():
     )
     sentence2 = col1.text_input("Message", key="user2_msg")
     btn2 = col1.button("Send", key="send2")
+    clear_btn = col1.button("Clear", key="clear")
 
     message_container = col2.container()
     message_container.write("")
@@ -61,6 +62,8 @@ def main():
         messages.append(sendMessage(sentence1, lang2, True))
     elif btn2:
         messages.append(sendMessage(sentence2, lang1, False))
+    elif clear_btn:
+        messages = []
     message_container.markdown(
         "".join(messages),
         unsafe_allow_html=True,
