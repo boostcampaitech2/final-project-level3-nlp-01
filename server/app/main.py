@@ -2,8 +2,9 @@ import uvicorn
 from fastapi import FastAPI
 
 from core.dto import ItemDto
-from service import translate_service
+from service import translate_service, load_yaml
 
+load_yaml()
 app = FastAPI()
 
 
