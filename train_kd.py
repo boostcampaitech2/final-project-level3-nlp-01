@@ -47,6 +47,11 @@ def main(cfg):
     decoder_tokenizer = getattr(__import__("transformers"), cfg.decoder.tokenizer).from_pretrained(dec_name) # target lang
     
     teacher_model = GrafomerModel(enc_name, dec_name, cfg)
+
+    teacher_model.encoder.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/encoder/checkpoint_55000.pt'))
+    teacher_model.decoder.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/decoder/chinese/checkpoint_55000.pt'))
+    teacher_model.graft_module.load_state_dict(torch.load('/opt/ml/final-project-level3-nlp-01/models/graft_module/chinese/checkpoint_55000.pt'))
+    
     student_model = StudentGrafomerModel(enc_name, dec_name, cfg, teacher_model)
     print(f"number of teacher model parameters: {teacher_model.num_parameters()}")
     print(f"number of student model parameters: {student_model.num_parameters()}")
@@ -110,11 +115,13 @@ def main(cfg):
     completed_steps = 0
     teacher_model.to(device)
     student_model.to(device)
+    total_loss, total_att_loss, total_hidd_loss, total_pred_loss = 0, 0, 0, 0
+    update_step = 0
     for epoch in range(cfg.train_config.num_train_epochs):
         
         student_model.train()
         progress_bar = tqdm(range(steps_per_epoch), ncols=100)
-
+        
         for batch in train_dataloader:
 
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -133,6 +140,11 @@ def main(cfg):
                 
                 scaler.scale(loss).backward()
                 step += 1
+                total_loss += loss
+                total_att_loss += att_loss / cfg.train_config.gradient_accumulation_steps
+                total_hidd_loss += hidd_loss / cfg.train_config.gradient_accumulation_steps
+                total_pred_loss += pred_loss / cfg.train_config.gradient_accumulation_steps
+
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
                     scaler.step(optimizer)
                     scaler.update()
@@ -143,17 +155,23 @@ def main(cfg):
                     progress_bar.update()
                     progress_bar.set_description(
                         f"Train: [{epoch + 1:03d}] "
-                        f"Loss: {loss:.3f}, "
-                        f"att loss: {att_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
-                        f"hidden loss: {rep_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
-                        f"pred loss: {pred_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
+                        f"loss: {total_loss:.3f}, "
                         f"lr: {optimizer.param_groups[0]['lr']:.7f}"
                     )
-
-
+                    update_step += 1
+                if step % 100 == 0:
+                    logger.info (
+                        f"Step [{step}] "
+                        f"loss: {loss / update_step :.3f}, "
+                        f"att loss: {total_att_loss / update_step :.3f}, "
+                        f"hidd loss: {total_rep_loss / update_step :.3f}, "
+                        f"pred loss: {total_pred_loss / update_step :.3f}, "
+                    )
+                    total_loss, total_att_loss, total_hidd_loss, total_pred_loss = 0, 0, 0, 0
+                    update_step = 0
+    
             # TODO: Do eval
             if step % (eval_steps * cfg.train_config.gradient_accumulation_steps) == 0 :
-                
                 student_model.eval()
                 eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
                 eval_loss = 0
@@ -195,12 +213,12 @@ def main(cfg):
                 cur_lang = cfg.lang
 
                 sacre_bleu_results = sacre_bleu.compute()
-                bert_score_results = bert_score.compute(lang=cur_lang)
+                # bert_score_results = bert_score.compute(lang=cur_lang)
 
                 logger.info(
                     f"{completed_steps} steps evaluation results \n"
                     f"{sacre_bleu_results} \n"
-                    f"{bert_score_results} \n"
+                    # f"{bert_score_results} \n"
                 )
 
                 logger.info(
@@ -216,9 +234,9 @@ def main(cfg):
                 os.makedirs(f"{cfg.train_config.save_dir}/kd_decoder/{cur_lang}", exist_ok=True)
                 os.makedirs(f"{cfg.train_config.save_dir}/kd_graft_module/{cur_lang}", exist_ok=True)
                 
-                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/kd_encoder/checkpoint_{completed_steps}.pt")
-                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/kd_decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
-                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/kd_graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(student_model.encoder.state_dict(), f"{cfg.train_config.save_dir}/kd_encoder/checkpoint_{completed_steps}.pt")
+                torch.save(student_model.decoder.state_dict(), f"{cfg.train_config.save_dir}/kd_decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(student_model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/kd_graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
                 
                 student_model.train()
                 
