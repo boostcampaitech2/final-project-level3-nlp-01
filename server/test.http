@@ -3,6 +3,5 @@ content-type: application/json
 
 {
     "text": "where are you from?",
-    "source_lang": "en",
     "target_lang": "es"
 }
