@@ -16,9 +16,11 @@ from datasets import load_metric
 from transformers import AutoConfig, AutoTokenizer
 from transformers import set_seed, get_cosine_schedule_with_warmup, AdamW
 
-from model import GrafomerModel
+from teacher_model import GrafomerModel
+from student_model import StudentGrafomerModel
 from utils import preprocess_function_with_setting, load_data, postprocess_text, CustomDataCollator
 
+from loss import KDLoss
 from datasets import load_from_disk
 
 logger = logging.getLogger(__name__)
@@ -44,24 +46,14 @@ def main(cfg):
     encoder_tokenizer = getattr(__import__("transformers"), cfg.encoder.tokenizer).from_pretrained(enc_name) # source lang
     decoder_tokenizer = getattr(__import__("transformers"), cfg.decoder.tokenizer).from_pretrained(dec_name) # target lang
     
-    model = GrafomerModel(enc_name, dec_name, cfg)
-    print(f"number of model parameters: {model.num_parameters()}")
+    teacher_model = GrafomerModel(enc_name, dec_name, cfg)
+    student_model = StudentGrafomerModel(enc_name, dec_name, cfg, teacher_model)
+    print(f"number of teacher model parameters: {teacher_model.num_parameters()}")
+    print(f"number of student model parameters: {student_model.num_parameters()}")
     
-    # Temp: 만약 decoder tokenizer에 bos token 추가가 필요하다면 주석 해제
-    # special_tokens_dict = {"additional_special_tokens": [cfg.decoder.bos_token]}
-    # decoder_tokenizer.add_special_tokens(special_tokens_dict=special_tokens_dict)
-    # model.decoder.resize_token_embeddings(len(decoder_tokenizer))
-    # decoder_tokenizer_tokenizer.bos_token = cfg.decoder.bos_token
-    
-    # Temp: 따로 모델에 bos token의 embedding을 늘려줄 필요가 없을 때는 위 주석 코드 말고 여기만 사용
-    # e.g. 중국어 gpt는 bert tokenizer를 사용해서 모델 임베딩은 바꿔줄 필요없이 bos token으로 cls 토큰을 설정해주시만 하면 됨.
     if decoder_tokenizer.bos_token is None:
         decoder_tokenizer.bos_token = cfg.decoder.bos_token
 
-    
-    # TODO Data Loader
-    # train_set, valid_set = load_data(cfg.data.ko_ja)
-    # train_set, valid_set = load_data(cfg.train_config.data_path)
     raw_dataset = load_from_disk("/opt/ml/final-project-level3-nlp-01/cn_unified_dataset")
     train_set, valid_set = raw_dataset["train"], raw_dataset["validation"]
     
@@ -79,12 +71,9 @@ def main(cfg):
 
     print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
-
-    # TODO Decoder Model Freeze
-    for param in model.decoder.parameters():
+    for param in teacher_model.parameters():
         param.requires_grad = False
     
-    # TODO: Train
     sacre_bleu = load_metric("sacrebleu")
     bert_score = load_metric("bertscore")
 
@@ -101,11 +90,11 @@ def main(cfg):
     no_decay=['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {
-            'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 
+            'params': [p for n, p in student_model.named_parameters() if not any(nd in n for nd in no_decay)], 
             'weight_decay': cfg.train_config.weight_decay
         },
         {
-            'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 
+            'params': [p for n, p in student_model.named_parameters() if any(nd in n for nd in no_decay)], 
             'weight_decay': 0.0
         }
     ]
@@ -114,16 +103,16 @@ def main(cfg):
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     scaler = torch.cuda.amp.GradScaler()
 
-    loss_function = nn.CrossEntropyLoss(ignore_index=decoder_tokenizer.pad_token_id)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
-
+    loss_function = KDLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
     step = 0
     completed_steps = 0
-    model.to(device)
+    teacher_model.to(device)
+    student_model.to(device)
     for epoch in range(cfg.train_config.num_train_epochs):
         
-        model.train()
+        student_model.train()
         progress_bar = tqdm(range(steps_per_epoch), ncols=100)
 
         for batch in train_dataloader:
@@ -132,18 +121,19 @@ def main(cfg):
 
             with torch.cuda.amp.autocast(): # 16 bit training 적용
             
-                outputs = model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
-                logits = outputs.logits.view(-1, len(decoder_tokenizer))
-                
+                teacher_outputs = teacher_model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
+                student_outputs = student_model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
+
                 labels = batch["labels"].view(-1)
-                loss = loss_function(logits, labels)
+                att_loss, rep_loss, pred_loss = loss_function(teacher_outputs, student_outputs, labels)
+                loss = att_loss + rep_loss + pred_loss
 
-                scaler.scale(loss / cfg.train_config.gradient_accumulation_steps).backward()
+                if cfg.train_config.gradient_accumulation_steps > 1:
+                    loss = loss / cfg.train_config.gradient_accumulation_steps
+                
+                scaler.scale(loss).backward()
                 step += 1
-
-
                 if step % cfg.train_config.gradient_accumulation_steps == 0:
-                    
                     scaler.step(optimizer)
                     scaler.update()
                     optimizer.zero_grad()
@@ -154,6 +144,9 @@ def main(cfg):
                     progress_bar.set_description(
                         f"Train: [{epoch + 1:03d}] "
                         f"Loss: {loss:.3f}, "
+                        f"att loss: {att_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
+                        f"hidden loss: {rep_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
+                        f"pred loss: {pred_loss / cfg.train_config.gradient_accumulation_steps :.3f}, "
                         f"lr: {optimizer.param_groups[0]['lr']:.7f}"
                     )
 
@@ -161,7 +154,7 @@ def main(cfg):
             # TODO: Do eval
             if step % (eval_steps * cfg.train_config.gradient_accumulation_steps) == 0 :
                 
-                model.eval()
+                student_model.eval()
                 eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
                 eval_loss = 0
                 preds, gt = [], []
@@ -180,7 +173,7 @@ def main(cfg):
                     with torch.no_grad():
                         
                         # decoder_input_ids = torch.ones((cfg.train_config.batch_size, 1), dtype=torch.long, device=device) * decoder_tokenizer.bos_token_id
-                        generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
+                        generated_tokens = student_model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
                                                         # decoder_input_ids=eval_batch["decoder_input_ids"], decoder_attention_mask=eval_batch["decoder_attention_mask"],
                                                         pad_token_id=decoder_tokenizer.pad_token_id, eos_token_id=decoder_tokenizer.eos_token_id, bos_token_id=decoder_tokenizer.bos_token_id,
                                                         do_sample=True, top_k=50, top_p=0.95)
@@ -219,15 +212,15 @@ def main(cfg):
                 eval_progress_bar.close()
 
                 # TODO: Model Checkpointing
-                os.makedirs(f"{cfg.train_config.save_dir}/encoder", exist_ok=True)
-                os.makedirs(f"{cfg.train_config.save_dir}/decoder/{cur_lang}", exist_ok=True)
-                os.makedirs(f"{cfg.train_config.save_dir}/graft_module/{cur_lang}", exist_ok=True)
+                os.makedirs(f"{cfg.train_config.save_dir}/kd_encoder", exist_ok=True)
+                os.makedirs(f"{cfg.train_config.save_dir}/kd_decoder/{cur_lang}", exist_ok=True)
+                os.makedirs(f"{cfg.train_config.save_dir}/kd_graft_module/{cur_lang}", exist_ok=True)
                 
-                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/checkpoint_{completed_steps}.pt")
-                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
-                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/kd_encoder/checkpoint_{completed_steps}.pt")
+                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/kd_decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/kd_graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
                 
-                model.train()
+                student_model.train()
                 
         progress_bar.close()
 
