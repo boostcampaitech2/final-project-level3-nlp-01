@@ -4,13 +4,13 @@ import torch
 from model import GrafomerModel
 
 
-def load_yaml():
-    with open("zh/config.yaml", "r") as f:
+def load_yaml(path):
+    with open(f"{path}/config.yaml", "r") as f:
         conf = yaml.load(f, Loader=yaml.FullLoader)
     return conf
 
 
-def model_init():
+def model_init(path):
     cfg = load_yaml()
     enc_name = cfg["encoder"]["name"]
     dec_name = cfg["decoder"]["name"]
@@ -23,9 +23,9 @@ def model_init():
     ).from_pretrained(dec_name, is_Fast=True)
 
     model = GrafomerModel(enc_name, dec_name, cfg)
-    model.encoder.load_state_dict(torch.load("zh/encoder.pt"))
-    model.decoder.load_state_dict(torch.load("zh/decoder.pt"))
-    model.graft_module.load_state_dict(torch.load("zh/graft_module.pt"))
+    model.encoder.load_state_dict(torch.load(f"{path}/encoder.pt"))
+    model.decoder.load_state_dict(torch.load(f"{path}/decoder.pt"))
+    model.graft_module.load_state_dict(torch.load(f"{path}/graft_module.pt"))
 
     model.cuda()
 
