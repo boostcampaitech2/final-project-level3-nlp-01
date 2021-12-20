@@ -11,7 +11,7 @@ def load_yaml(path):
 
 
 def model_init(path):
-    cfg = load_yaml()
+    cfg = load_yaml(path)
     enc_name = cfg["encoder"]["name"]
     dec_name = cfg["decoder"]["name"]
 
@@ -28,7 +28,9 @@ def model_init(path):
     model.graft_module.load_state_dict(torch.load(f"{path}/graft_module.pt"))
 
     model.cuda()
+    model.eval()
 
+    @torch.no_grad()
     def generate(text):
         model_inputs = encoder_tokenizer(
             text, max_length=512, padding=False, truncation=True, return_tensors="pt"
@@ -37,11 +39,12 @@ def model_init(path):
             model.generate(
                 model_inputs["input_ids"].cuda(),
                 attention_mask=model_inputs["attention_mask"].cuda(),
-                max_length=1024,
+                max_length=int(model_inputs["input_ids"].shape[1] * 1.3),
                 pad_token_id=decoder_tokenizer.pad_token_id,
                 eos_token_id=decoder_tokenizer.eos_token_id,
                 bos_token_id=decoder_tokenizer.bos_token_id,
-                early_stopping=True,
+                do_sample=True,
+                repetition_penalty=1.2,
                 top_k=50,
                 top_p=0.95,
             )
