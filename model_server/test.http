@@ -1,4 +1,31 @@
-POST http://0.0.0.0:6006 HTTP/1.1
+POST http://0.0.0.0:6006/en HTTP/1.1
+content-type: application/json
+
+{
+    "text": "안녕하세요"
+}
+
+###
+
+POST http://0.0.0.0:6006/zh HTTP/1.1
+content-type: application/json
+
+{
+    "text": "중국의 날씨는 매우 흐릴것입니다. 한국의 날씨도 매우 흐릴것입니다. 일본의 날씨는 맑을 것입니다."
+}
+
+###
+
+POST http://0.0.0.0:6006/ko HTTP/1.1
+content-type: application/json
+
+{
+    "text": "Hello, my name is seokmin"
+}
+
+###
+
+POST http://101.101.211.100:6014/ko HTTP/1.1
 content-type: application/json
 
 {
