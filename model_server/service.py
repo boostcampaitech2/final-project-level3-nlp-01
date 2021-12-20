@@ -1,10 +1,7 @@
-def model_init():
-  model = None
-  return model
+from util import model_init
 
-def predict_func():
-  model = model_init()
-  def predict(text):
-    predict_text = text
-    return predict_text
-  return predict
+predict = model_init()
+
+
+def translate_service(text):
+    return predict(text)
