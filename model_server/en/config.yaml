@@ -1,0 +1,19 @@
+encoder:
+  name: bert-base-multilingual-cased
+  model: AutoModel
+  tokenizer: AutoTokenizer
+
+decoder:
+  name: Chaewon/mnmt_decoder_en
+  model: GPT2LMHeadModel
+  body: transformer
+  head: lm_head
+  tokenizer: AutoTokenizer
+  embed_dim: 768
+  bos_token: "<s>"
+  decoder_start_token_id: 50257
+  need_prefix: True
+
+graft_module_config:
+  num_enc_layer: 2
+  num_dec_layer: 2
