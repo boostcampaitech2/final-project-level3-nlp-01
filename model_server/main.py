@@ -1,16 +1,16 @@
 import uvicorn
 from fastapi import FastAPI
-from service import predict_func
+from service import translate_service
+from dto import ItemDto
 
 
-model_predict = predict_func()
 app = FastAPI()
 
 
 @app.post("/")
-def translate(text: str):
-    return model_predict(text)
+async def translate(item: ItemDto):
+    return translate_service(item.text)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=6006, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=6006, reload=False)
