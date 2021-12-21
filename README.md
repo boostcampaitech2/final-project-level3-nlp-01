@@ -1,6 +1,25 @@
-# final-project-level3-nlp-01
+# 다국어 채팅 서비스 앵무새 톡
 
-# Poetry 설치 (venv)
+<div align="center">
+    <img src="https://i.imgur.com/145udIs.png" alt="Logo" width="300">
+
+  <h3 align="center">Multilingual Messanger</h3>
+
+  <p align="center">
+    Run & Learn Team - BoostCamp AI Second
+    <br />
+  </p>
+</div>
+
+# 프로젝트 개요
+
+![](https://i.imgur.com/vAD4sgm.png)
+
+- 
+
+# 기본 설정법
+
+## Poetry 설치 (venv)
 
 ```
 // 설치
