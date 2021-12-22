@@ -137,7 +137,6 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
         output_hidden_states=None,
         return_dict=None,
     ):
-
         if encoder_outputs is None:
             encoder_outputs = self.encoder(input_ids=input_ids,
                                         attention_mask=attention_mask,
@@ -210,4 +209,4 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
             # print(len(past))
             # print(past.shape)
             pass
-        return {"input_ids": input_ids, **kwargs}
+        return {"input_ids": input_ids, **kwargs} 

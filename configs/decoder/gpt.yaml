@@ -3,3 +3,7 @@ model: GPT2LMHeadModel
 body: transformer
 head: lm_head
 tokenizer: MT5Tokenizer
+embed_dim: 1024
+bos_token: "<s>"
+decoder_start_token_id: 250100
+need_prefix: True
