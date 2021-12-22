@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import copy
 
 from transformers import AutoConfig
 from transformers.generation_utils import GenerationMixin
@@ -10,23 +9,23 @@ from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.bart.modeling_bart import BartEncoderLayer, BartDecoderLayer
 from transformers.models.bart.modeling_bart import _expand_mask, _make_causal_mask
 
-from teacher_model import GraformerModelOutput
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
-class StudentGraftAttentionModule(nn.Module):
-    def __init__(self, bart_config, model_config, embed_dim, teacher_model):
+@dataclass
+class GraformerModelOutput(Seq2SeqLMOutput):
+    graft_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    graft_attentions: Optional[Tuple[torch.FloatTensor]] = None
+
+class GraftAttentionModule(nn.Module):
+    def __init__(self, bart_config, model_config, embed_dim):
         super().__init__()
         
-        # self.embed_dim = embed_dim
-        # self.graft_encoder = copy.deepcopy(teacher_model.graft_module.graft_encoder[-1])
-        # self.graft_decoder = copy.deepcopy(teacher_model.graft_module.graft_decoder[-1])
-        # self.graft_input_pooler = copy.deepcopy(teacher_model.graft_module.graft_input_pooler)
-        # self.graft_output_pooler = copy.deepcopy(teacher_model.graft_module.graft_output_pooler)
         self.embed_dim = embed_dim
         self.graft_encoder = nn.ModuleList([BartEncoderLayer(bart_config) for _ in range(model_config["num_enc_layer"])])
         self.graft_decoder = nn.ModuleList([BartDecoderLayer(bart_config) for _ in range(model_config["num_dec_layer"])])
         self.graft_input_pooler = nn.Linear(self.embed_dim, 768)
         self.graft_output_pooler = nn.Linear(768, self.embed_dim)
-
 
     def forward(
         self, 
@@ -69,7 +68,7 @@ class StudentGraftAttentionModule(nn.Module):
                 output_attentions=output_attentions,
                 use_cache=use_cache,
             )
-            # decoder_hidden_states = decoder_layer_outputs[0]
+            decoder_hidden_states = decoder_layer_outputs[0]
             # hidden_states.append(encoder_layer_outputs.hidden_states)
             # attentions.append(encoder_layer_outputs.attentions)
 
@@ -78,43 +77,28 @@ class StudentGraftAttentionModule(nn.Module):
         return decoder_hidden_states# , # hidden_states, attentions
 
 
-class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin):
-    def __init__(self, enc_name, dec_name, cfg, teacher_model):
+class GrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMixin):
+    def __init__(self, enc_name, dec_name, cfg):
         super().__init__()
 
-        self.encoder_config = AutoConfig.from_pretrained(enc_name, num_hidden_layers=4, output_attentions=True, output_hidden_states=True)
-        self.decoder_config = AutoConfig.from_pretrained(dec_name, num_hidden_layers=4, output_attentions=True, output_hidden_states=True)
+        self.encoder_config = AutoConfig.from_pretrained(enc_name, output_attentions=True, output_hidden_states=True)
+        self.decoder_config = AutoConfig.from_pretrained(dec_name, output_attentions=True, output_hidden_states=True)
 
         self.encoder = getattr(__import__("transformers"), cfg.encoder.model).from_pretrained(enc_name, config=self.encoder_config)
         self.decoder = getattr(__import__("transformers"), cfg.decoder.model).from_pretrained(dec_name, config=self.decoder_config)
 
-        self.encoder.load_state_dict(teacher_model.encoder.state_dict(), strict=False)
-        self.encoder.encoder.layer = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.encoder.encoder.layer) if i%3==2])
-        # self.encoder.pooler.load_state_dict(teacher_model.encoder.pooler.state_dict())
-
-        # self.decoder.transformers.wte = copy.deepcopy(teacher_model.decoder.transformers.wte)
-        # self.decoder.transformers.wpe = copy.deepcopy(teacher_model.decoder.transformers.wpe)
-        # self.decoder.transformers.h = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.decoder.transformers.h) if i%2==1])
-        # self.decoder.transforemrs.ln_f = copy.deepcopy(teacher_model.decoder.ln_f)
-        # self.decoder.lm_head = copy.deepcopy(teacher_model.decoder.lm_head)
-
-        self.config = self.decoder_config  # for compatibility in generate method
+        self.config = self.decoder.config  # for compatibility in generate method
         self.config.is_encoder_decoder = True
         self.config.decoder_start_token_id = cfg.decoder.decoder_start_token_id
-        # print(self.config)
-
-
-        self.decoder.load_state_dict(teacher_model.decoder.state_dict(), strict=False)
-        self.decoder.transformer.h = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.decoder.transformer.h) if i%3==2])
-        # self.decoder.lm_head.load_state_dict(teacher_model.decoder_head.state_dict())
+        print(self.config)
 
         self.decoder_body = getattr(self.decoder, cfg.decoder.body)
         self.decoder_head = getattr(self.decoder, cfg.decoder.head)
-
+        print(self.decoder_body)
         self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
+        
         self.decoder_embed_dim = cfg.decoder.embed_dim
-        # self.graft_module = StudentGraftAttentionModule(self.bart_config, cfg.graft_module_config, self.decoder_embed_dim, teacher_model)
-        self.graft_module = copy.deepcopy(teacher_model.graft_module)
+        self.graft_module = GraftAttentionModule(self.bart_config, cfg.graft_module_config, self.decoder_embed_dim)
     
     def get_encoder(self):
         return self.encoder
@@ -137,6 +121,7 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
         output_hidden_states=None,
         return_dict=None,
     ):
+
         if encoder_outputs is None:
             encoder_outputs = self.encoder(input_ids=input_ids,
                                         attention_mask=attention_mask,
@@ -181,6 +166,13 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
         encoder_attentions = encoder_outputs.attentions
         decoder_attentions = decoder_outputs.attentions
 
+        # graformer_hidden_state, graft_hidden_states, graft_attentions = self.graft_module(
+        #     encoder_hidden_states=encoder_hidden_state,
+        #     encoder_attention_mask=mask,
+        #     decoder_hidden_states=decoder_hidden_state,
+        #     decoder_attention_mask=dec_mask,
+        #     cross_attention_mask=cross_mask,
+        #     output_attentions=output_attentions,
         graformer_hidden_state = self.graft_module(
             encoder_hidden_states=encoder_hidden_state,
             encoder_attention_mask=mask,
@@ -189,17 +181,19 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
             cross_attention_mask=cross_mask,
             output_attentions=output_attentions,
         )
-
+        # print
         output_hidden_states = decoder_hidden_state + graformer_hidden_state
         output_hidden_states = self.decoder_head(output_hidden_states)
 
         return Seq2SeqLMOutput(
             logits=output_hidden_states,
+            # encoder_last_hidden_state=encoder_hidden_state,
             encoder_hidden_states=encoder_hidden_states,
             encoder_attentions=encoder_attentions,
+            # decoder_last_hidden_state=decoder_hidden_state,
             decoder_hidden_states=decoder_hidden_states,
             decoder_attentions=decoder_attentions,
-            # graft_hidden_states=graft_hidden_states,
+            # graft_hidden_states=graformer_hidden_state,
             # graft_attentions=graft_attentions,
         )
         
@@ -209,4 +203,4 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
             # print(len(past))
             # print(past.shape)
             pass
-        return {"input_ids": input_ids, **kwargs} 
+        return {"input_ids": input_ids, **kwargs}

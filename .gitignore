@@ -137,5 +137,12 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 data
-nohup.out
-outputs
+
+# log
+nohup*
+models/
+*.tar*
+*.log
+*dataset*/
+outputs/
+
