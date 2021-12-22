@@ -1,0 +1,26 @@
+defaults:
+  - encoder: bert
+  - data: default
+  - decoder: cn_gpt
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+  - _self_
+
+graft_module_config:
+  num_enc_layer: 2
+  num_dec_layer: 2
+
+encoder_name: bert-base-multilingual-cased
+decoder_name: ckiplab/gpt2-base-chinese
+
+decoder_path: /opt/ml/final-project-level3-nlp-01/cn_models/decoder/checkpoint_55000.pt
+encoder_path: /opt/ml/final-project-level3-nlp-01/cn_models/encoder/checkpoint_55000.pt
+graft_path: /opt/ml/final-project-level3-nlp-01/cn_models/graft_module/checkpoint_55000.pt
+
+need_prefix: false
+batch_size: 32
+
+data_path: /opt/ml/final-project-level3-nlp-01/eval_data/zh_test
+
+output_path: /opt/ml/final-project-level3-nlp-01/eval_output
+output_name: result_cn
