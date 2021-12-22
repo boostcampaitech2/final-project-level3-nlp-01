@@ -1,3 +1,11 @@
+# personal
+models
+outputs
+en_cn_ko_data
+.gitignore
+en_unified_dataset
+ko_unified_dataset
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -6,14 +6,14 @@ from datasets import load_dataset
 from transformers import BatchEncoding
 
 
-def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switch_language_pair=False, need_prefix=True):
+def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switch_language_pair=False, need_prefix=False):
     def preprocess_function(examples, max_length, max_target_length):
 
         src_sentence = examples["text"] if not switch_language_pair else examples["target"]
         tgt_sentence = examples["target"] if not switch_language_pair else examples["text"]
         
         if need_prefix:
-            tgt_sentence = [decoder_tokenizer.bos_token + ex for ex in tgt_sentence]
+            tgt_sentence = [decoder_tokenizer.bos_token + ex + decoder_tokenizer.eos_token for ex in tgt_sentence]
 
         model_inputs = encoder_tokenizer(src_sentence, max_length=max_length, padding=False, truncation=True)
         decoder_inputs = decoder_tokenizer(tgt_sentence, max_length=max_target_length, padding=False, truncation=True)
@@ -35,7 +35,7 @@ def postprocess_text(preds, labels):
 
 
 def load_data(path):
-    _train, _valid = load_dataset(path, split=["train[97%:]", "train[:1%]"], use_auth_token="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")
+    _train, _valid = load_dataset(path, split=["train[1%:]", "train[:1%]"], use_auth_token="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")
     return _train, _valid
 
 

@@ -2,7 +2,7 @@ kr_jp: deCyma/kr_jp
 kr_en: deCyma/kr_en
 kr_cn: deCyma/kr_cn
 jp_cn: deCyma/jp_cn
-switch: False
+switch: false
 fn_kwargs:
   max_length: 512
   max_target_length: 1024

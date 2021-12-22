@@ -11,7 +11,8 @@ from omegaconf import OmegaConf
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from datasets import load_metric
+from datasets import load_metric, load_from_disk
+import datasets
 from transformers import AutoConfig, AutoTokenizer
 from transformers import set_seed, get_cosine_schedule_with_warmup, AdamW
 
@@ -22,6 +23,65 @@ logger = logging.getLogger(__name__)
 formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
 file_handler = logging.FileHandler(filename='train.log')
 logger.addHandler(file_handler)
+
+
+def load_data(data_path: str):
+
+    raw_dataset = load_from_disk(data_path)
+    return raw_dataset["train"], raw_dataset["validation"]
+
+
+def convert_data_to_features(
+    train_dataset: datasets.Dataset, 
+    valid_dataset: datasets.Dataset, 
+    encoder_tokenizer, 
+    decoder_tokenizer, 
+    need_prefix=False,
+):
+    fn_kwargs = {"max_length": 512, "max_target_length": 1024}
+    train_features = train_dataset.map(
+        preprocess_function_with_setting(
+            encoder_tokenizer, decoder_tokenizer, need_prefix=need_prefix
+        ),  # encoder tokenizer, decoder tokenizer, switch: bool, need_prefix: bool
+        num_proc=8, 
+        batched=True, 
+        remove_columns=train_dataset.column_names,
+        fn_kwargs = fn_kwargs,
+    )
+    valid_features = valid_dataset.map(
+        preprocess_function_with_setting(
+            encoder_tokenizer, decoder_tokenizer, need_prefix=need_prefix
+        ),  # encoder tokenizer, decoder tokenizer, switch: bool, need_prefix: bool
+        num_proc=8,
+        batched=True, 
+        remove_columns=valid_dataset.column_names,
+        fn_kwargs = fn_kwargs,
+    )
+
+    return train_features, valid_features
+
+
+def convert_data_to_dataloader(preprocessed_train, preprocessed_valid, batch_size, data_collator):
+    
+    train_dataloader = DataLoader(
+        preprocessed_train, 
+        batch_size=batch_size, 
+        pin_memory=True, 
+        num_workers=8,
+        shuffle=True, drop_last=True, 
+        collate_fn=data_collator
+    )
+    valid_dataloader = DataLoader(
+        preprocessed_valid, 
+        batch_size=batch_size, 
+        pin_memory=True, 
+        num_workers=8, 
+        shuffle=True, 
+        drop_last=False, 
+        collate_fn=data_collator
+    )
+
+    return train_dataloader, valid_dataloader
 
 
 @hydra.main(config_path='./configs', config_name="config.yaml")
@@ -43,34 +103,35 @@ def main(cfg):
     
     model = GrafomerModel(enc_name, dec_name, cfg)
     print(f"number of model parameters: {model.num_parameters()}")
-    
-    # Temp: 만약 decoder tokenizer에 bos token 추가가 필요하다면 주석 해제
-    # special_tokens_dict = {"additional_special_tokens": [cfg.decoder.bos_token]}
-    # decoder_tokenizer.add_special_tokens(special_tokens_dict=special_tokens_dict)
-    # model.decoder.resize_token_embeddings(len(decoder_tokenizer))
-    # decoder_tokenizer_tokenizer.bos_token = cfg.decoder.bos_token
-    
-    # Temp: 따로 모델에 bos token의 embedding을 늘려줄 필요가 없을 때는 위 주석 코드 말고 여기만 사용
-    # e.g. 중국어 gpt는 bert tokenizer를 사용해서 모델 임베딩은 바꿔줄 필요없이 bos token으로 cls 토큰을 설정해주시만 하면 됨.
-    if decoder_tokenizer.bos_token is None:
-        decoder_tokenizer.bos_token = cfg.decoder.bos_token
+
+    # model.encoder.load_state_dict(torch.load("/opt/ml/final-project-level3-nlp-01/models/encoder/encoder.pt"))
+    # model.decoder.load_state_dict(torch.load("/opt/ml/final-project-level3-nlp-01/en_model_checkpoint/en_decoder.pt"))
+    # model.graft_module.load_state_dict(torch.load("/opt/ml/final-project-level3-nlp-01/en_model_checkpoint/en_graft_module.pt"))
 
     
     # TODO Data Loader
-    # train_set, valid_set = load_data(cfg.data.ko_ja)
-    train_set, valid_set = load_data(cfg.train_config.data_path)
+    # train_set, valid_set = load_data(cfg.train_config.data_path)
+    train_set, valid_set = load_data("/opt/ml/final-project-level3-nlp-01/en_unified_dataset")
     
-    fn_kwargs = cfg.data.fn_kwargs
-    tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
-                                    num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
-    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
-                                    num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
+    tokenized_train, tokenized_valid = convert_data_to_features(
+        train_dataset = train_set, 
+        valid_dataset = valid_set, 
+        encoder_tokenizer = encoder_tokenizer, 
+        decoder_tokenizer = decoder_tokenizer, 
+        need_prefix = cfg.decoder.need_prefix
+    )
 
-    data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
-    train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
-                                  shuffle=True, drop_last=True, num_workers=8, collate_fn=data_collator)
-    valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
-                                  shuffle=False, drop_last=False, num_workers=8, collate_fn=data_collator)
+    data_collator = CustomDataCollator(
+        encoder_pad_token_id = encoder_tokenizer.pad_token_id, 
+        decoder_pad_token_id = decoder_tokenizer.pad_token_id,
+    )  # encoder_pad_token_id, decoder_pad_token_id
+    
+    train_dataloader, valid_dataloader = convert_data_to_dataloader(
+        preprocessed_train = tokenized_train, 
+        preprocessed_valid = tokenized_valid, 
+        batch_size = cfg.train_config.batch_size, 
+        data_collator = data_collator,
+    )
 
     print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
@@ -81,7 +142,7 @@ def main(cfg):
     
     # TODO: Train
     sacre_bleu = load_metric("sacrebleu")
-    bert_score = load_metric("bertscore")
+    # bert_score = load_metric("bertscore")
 
     total_steps = len(train_dataloader)  // cfg.train_config.gradient_accumulation_steps * cfg.train_config.num_train_epochs
     steps_per_epoch = len(train_dataloader) // cfg.train_config.gradient_accumulation_steps
@@ -109,6 +170,7 @@ def main(cfg):
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     scaler = torch.cuda.amp.GradScaler()
 
+    print(decoder_tokenizer.pad_token, decoder_tokenizer.pad_token_id)
     loss_function = nn.CrossEntropyLoss(ignore_index=decoder_tokenizer.pad_token_id)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
@@ -156,67 +218,67 @@ def main(cfg):
             # TODO: Do eval
             if step % (eval_steps * cfg.train_config.gradient_accumulation_steps) == 0 :
                 
-                model.eval()
-                eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
-                eval_loss = 0
-                preds, gt = [], []
-                sample_indices = random.choices(range(500), k=50)
+            #     model.eval()
+            #     eval_progress_bar = tqdm(range(len(valid_dataloader)), ncols=100)
+            #     eval_loss = 0
+            #     preds, gt = [], []
+            #     sample_indices = random.choices(range(500), k=50)
 
-                for eval_step, eval_batch in enumerate(valid_dataloader):
+            #     for eval_step, eval_batch in enumerate(valid_dataloader):
 
-                    eval_batch = {k: v.to(device) for k, v in eval_batch.items()}
+            #         eval_batch = {k: v.to(device) for k, v in eval_batch.items()}
 
-                    """
-                    output = my_model.generate(input_ids, attention_mask=attention_mask , max_length=1025,
-                    pad_token_id=pad_token_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id,
-                    num_beams=5, temperature=0.9, top_k=50, top_p=1.0, 
-                    repetition_penalty=1.0, use_cache=True)
-                    """
-                    with torch.no_grad():
+            #         """
+            #         output = my_model.generate(input_ids, attention_mask=attention_mask , max_length=1025,
+            #         pad_token_id=pad_token_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id,
+            #         num_beams=5, temperature=0.9, top_k=50, top_p=1.0, 
+            #         repetition_penalty=1.0, use_cache=True)
+            #         """
+            #         with torch.no_grad():
                         
-                        # decoder_input_ids = torch.ones((cfg.train_config.batch_size, 1), dtype=torch.long, device=device) * decoder_tokenizer.bos_token_id
-                        generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
-                                                        # decoder_input_ids=eval_batch["decoder_input_ids"], decoder_attention_mask=eval_batch["decoder_attention_mask"],
-                                                        pad_token_id=decoder_tokenizer.pad_token_id, eos_token_id=decoder_tokenizer.eos_token_id, bos_token_id=decoder_tokenizer.bos_token_id,
-                                                        do_sample=True, top_k=50, top_p=0.95)
-                        labels = eval_batch["labels"]
+            #             # decoder_input_ids = torch.ones((cfg.train_config.batch_size, 1), dtype=torch.long, device=device) * decoder_tokenizer.bos_token_id
+            #             generated_tokens = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"], max_length=int(eval_batch["input_ids"].shape[1] * 1.3),
+            #                                             # decoder_input_ids=eval_batch["decoder_input_ids"], decoder_attention_mask=eval_batch["decoder_attention_mask"],
+            #                                             pad_token_id=decoder_tokenizer.pad_token_id, eos_token_id=decoder_tokenizer.eos_token_id, bos_token_id=decoder_tokenizer.bos_token_id,
+            #                                             do_sample=True, top_k=50, top_p=0.95, repetition_penalty=1.2)
+            #             labels = eval_batch["labels"]
 
-                        decoded_preds = decoder_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
-                        decoded_labels = decoder_tokenizer.batch_decode(labels, skip_special_tokens=True)
+            #             decoded_preds = decoder_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+            #             decoded_labels = decoder_tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-                        decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
-                        sacre_bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
-                        bert_score.add_batch(predictions=decoded_preds, references=decoded_labels)
-                        preds.extend(decoded_preds); gt.extend(decoded_labels)
+            #             decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
+            #             sacre_bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
+            #             # bert_score.add_batch(predictions=decoded_preds, references=decoded_labels)
+            #             preds.extend(decoded_preds); gt.extend(decoded_labels)
 
                     
-                    eval_progress_bar.update()
-                    if eval_step == 1000: 
-                        break
+            #         eval_progress_bar.update()
+            #         if eval_step == 1000: 
+            #             break
                 
-                sacre_bleu_results = sacre_bleu.compute()
-                bert_score_results = bert_score.compute()
+            #     sacre_bleu_results = sacre_bleu.compute()
+            #     # bert_score_results = bert_score.compute()
 
-                logger.info(
-                    f"{completed_steps} steps evaluation results \n"
-                    f"{sacre_bleu_results} \n"
-                    f"{bert_score_results} \n"
-                )
+            #     logger.info(
+            #         f"{completed_steps} steps evaluation results \n"
+            #         f"{sacre_bleu_results} \n"
+            #         # f"{bert_score_results} \n"
+            #     )
 
-                logger.info(
-                    f"decoded sentences: "
-                )
-                for i, n in enumerate(sample_indices, 1):
-                    logger.info(f"[{i}] (gt) {gt[n]}  ->  (pred) {preds[n]}")
+            #     logger.info(
+            #         f"decoded sentences: "
+            #     )
+            #     for i, n in enumerate(sample_indices, 1):
+            #         logger.info(f"[{i}] (gt) {gt[n]}  ->  (pred) {preds[n]}")
                 
-                eval_progress_bar.close()
+            #     eval_progress_bar.close()
 
                 # TODO: Model Checkpointing
-                cur_lang = cfg.lang
+                # cur_lang = cfg.lang
 
-                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/checkpoint_{completed_steps}.pt")
-                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
-                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
+                torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/en/checkpoint_{completed_steps}.pt")
+                torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/en/checkpoint_{completed_steps}.pt")
+                torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/en/checkpoint_{completed_steps}.pt")
                 
                 model.train()
                 

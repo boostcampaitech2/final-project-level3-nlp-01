@@ -1,9 +1,9 @@
-name: skt/ko-gpt-trinity-1.2B-v0.5
-model: AutoModelWithLMHead
+name: kykim/gpt3-kor-small_based_on_gpt2
+model: GPT2LMHeadModel
 body: transformer
 head: lm_head
-tokenizer: AutoTokenizer
-embed_dim: 1920
-bos_token: "<s>"
-decoder_start_token_id: 0
-need_prefix: True
+tokenizer: BertTokenizerFast
+embed_dim: 768
+bos_token: "[CLS]"
+decoder_start_token_id: 2
+need_prefix: False
