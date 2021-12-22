@@ -13,7 +13,7 @@ StudentDecoderConfig 클래스의 __init__ 메서드 안에 있는 n_layer에 �
 # knowledge distillation시 적용하는 일반적인 Loss function
 python wd_WdLoss_train.py
 
-# tiny Bert에서 적용한 Loss function 적용
+# tiny Bert에서 적용한 Loss function
 # Out of Memory 문제
 python wd_KdLoss_train.py
 ```
