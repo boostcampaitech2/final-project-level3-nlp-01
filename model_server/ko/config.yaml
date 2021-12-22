@@ -1,0 +1,19 @@
+encoder:
+  name: bert-base-multilingual-cased
+  model: AutoModel
+  tokenizer: AutoTokenizer
+
+decoder:
+  name: kykim/gpt3-kor-small_based_on_gpt2
+  model: AutoModelForCausalLM
+  body: transformer
+  head: lm_head
+  tokenizer: BertTokenizerFast
+  embed_dim: 768
+  bos_token: "[CLS]"
+  decoder_start_token_id: 2
+  need_prefix: False
+
+graft_module_config:
+  num_enc_layer: 2
+  num_dec_layer: 2

@@ -1,0 +1,11 @@
+groups:
+  - name: team_members # name of the group
+    reviewers: 3 # how many reviewers do you want to assign?
+    internal_reviewers: 2 # how many reviewers do you want to assign when the PR author belongs to this group?
+    usernames: # github usernames of the reviewers
+      - taehyeonk
+      - eunaoeh
+      - Kangsukmin
+      - ycw0363
+      - Oh-Donggyu
+      - gimmaru

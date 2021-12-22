@@ -3,6 +3,7 @@ import math
 import logging
 import argparse
 from tqdm import tqdm
+import os
 
 import yaml
 import hydra
@@ -17,6 +18,8 @@ from transformers import set_seed, get_cosine_schedule_with_warmup, AdamW
 
 from model import GrafomerModel
 from utils import preprocess_function_with_setting, load_data, postprocess_text, CustomDataCollator
+
+from datasets import load_from_disk
 
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
@@ -58,12 +61,14 @@ def main(cfg):
     
     # TODO Data Loader
     # train_set, valid_set = load_data(cfg.data.ko_ja)
-    train_set, valid_set = load_data(cfg.train_config.data_path)
+    # train_set, valid_set = load_data(cfg.train_config.data_path)
+    raw_dataset = load_from_disk("/opt/ml/final-project-level3-nlp-01/cn_unified_dataset")
+    train_set, valid_set = raw_dataset["train"], raw_dataset["validation"]
     
     fn_kwargs = cfg.data.fn_kwargs
     tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
                                     num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
-    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch),
+    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix),
                                     num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
 
     data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
@@ -194,8 +199,10 @@ def main(cfg):
                     if eval_step == 1000: 
                         break
                 
+                cur_lang = cfg.lang
+
                 sacre_bleu_results = sacre_bleu.compute()
-                bert_score_results = bert_score.compute()
+                bert_score_results = bert_score.compute(lang=cur_lang)
 
                 logger.info(
                     f"{completed_steps} steps evaluation results \n"
@@ -212,8 +219,10 @@ def main(cfg):
                 eval_progress_bar.close()
 
                 # TODO: Model Checkpointing
-                cur_lang = cfg.lang
-
+                os.makedirs(f"{cfg.train_config.save_dir}/encoder", exist_ok=True)
+                os.makedirs(f"{cfg.train_config.save_dir}/decoder/{cur_lang}", exist_ok=True)
+                os.makedirs(f"{cfg.train_config.save_dir}/graft_module/{cur_lang}", exist_ok=True)
+                
                 torch.save(model.encoder.state_dict(), f"{cfg.train_config.save_dir}/encoder/checkpoint_{completed_steps}.pt")
                 torch.save(model.decoder.state_dict(), f"{cfg.train_config.save_dir}/decoder/{cur_lang}/checkpoint_{completed_steps}.pt")
                 torch.save(model.graft_module.state_dict(), f"{cfg.train_config.save_dir}/graft_module/{cur_lang}/checkpoint_{completed_steps}.pt")
