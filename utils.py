@@ -13,14 +13,14 @@ def preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, switc
         tgt_sentence = examples["target"] if not switch_language_pair else examples["text"]
         
         if need_prefix:
-            tgt_sentence = decoder_tokenizer.bos_token + " " + tgt_sentence.strip() + " " + decoder_tokenizer.eos_token
+            tgt_sentence = [decoder_tokenizer.bos_token + ex for ex in tgt_sentence]
 
         model_inputs = encoder_tokenizer(src_sentence, max_length=max_length, padding=False, truncation=True)
         decoder_inputs = decoder_tokenizer(tgt_sentence, max_length=max_target_length, padding=False, truncation=True)
 
         model_inputs['decoder_input_ids'] = decoder_inputs['input_ids']
         model_inputs['decoder_attention_mask'] = decoder_inputs['attention_mask']
-        model_inputs['labels'] = decoder_inputs['input_ids'][1:] + [decoder_tokenizer.pad_token_id]
+        model_inputs['labels'] = [ex[1:]+[decoder_tokenizer.pad_token_id] for ex in decoder_inputs['input_ids']]
 
         return model_inputs
         
@@ -72,7 +72,7 @@ class CustomDataCollator:
             labels[i] = labels[i] + remainder
             decoder_input_ids[i] = decoder_input_ids[i] + remainder
             decoder_attention_mask[i] = decoder_attention_mask[i] + remainder
-        
+
         features = BatchEncoding({
             "input_ids": input_ids, "attention_mask": attention_mask, "decoder_input_ids": decoder_input_ids,
             "decoder_attention_mask": decoder_attention_mask, "labels": labels,
