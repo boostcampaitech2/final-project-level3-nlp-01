@@ -55,7 +55,12 @@
 # 프로젝트 개요
 ## 프로젝트 구성
 한국어, 영어, 중국어 번역이 가능한 다국어 번역 모델을 구현하고, 벡엔드와 프론트엔드를 각각 FastAPI와 Streamlit으록 구축하여 다국어 번역 채팅 서비스를 제공합니다.
-![](https://i.imgur.com/vAD4sgm.png)
+
+<div align="center">
+    <img src="https://i.imgur.com/vAD4sgm.png">
+</div>
+
+
 
 ## 데이터셋
 번역 데이터의 source language와 target language를 교차해서 양방향 번역 데이터로 사용했습니다.
@@ -125,14 +130,28 @@ configs
 └──config.yaml
 ```
 **Config Usage**
+
 `config.yaml`의 `default.decoder`를 원하는 디코더 파일로 설정하여 사용할 수 있습니다. 그 외의 원하는 학습 parameter도 `config.yaml`에서 변경하여 사용합니다.
 
 <!--`config.yaml`을 수정하여 모델 학습(train configuration 설정 및 data, encoder, decoder configuration의 entrypoint)-->
 
 ### Code
 `train.py` : 모델을 훈련시키는 코드파일 입니다.
+
 `utils.py` : 훈련에 필요한 유틸이 들어있는 코드파일 입니다.
+
 `model.py` : 모델 구조를 결정하는 클래스 파일입니다.
+
+`train_kd.py`: Knowledge Distillation을 하는 코드파일입니다.
+
+`student_model.py`: Student 모델을 불러오는 클래스파일입니다.
+
+`teacher_model.py`: Teacher 모델을 불러오는 클래스파일입니다.
+
+`loss.py`: TinyBERT의 Distillation loss를 구현한 클래스 파일입니다.
+
+`evaluation.py`: 평가 데이터셋에 대하여 BLEU Score로 평가하는 코드 파일입니다.
+
 
 ## Usage
 ### Installation
@@ -144,10 +163,16 @@ $ poetry install && poetry update
 ```
 $ python train.py
 ```
-2. Knowledge Distillation
+2. Distillation
+- Knowledg Distillation
 ```
 $ python train_kd.py
 ```
+- Weight Distillation
+```
+python 
+```
+
 3. Evaluation
 ```
 $ python evaluation.py
