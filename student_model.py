@@ -82,14 +82,14 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
     def __init__(self, enc_name, dec_name, cfg, teacher_model):
         super().__init__()
 
-        self.encoder_config = AutoConfig.from_pretrained(enc_name, num_hidden_layers=6, output_attentions=True, output_hidden_states=True)
-        self.decoder_config = AutoConfig.from_pretrained(dec_name, num_hidden_layers=6, output_attentions=True, output_hidden_states=True)
+        self.encoder_config = AutoConfig.from_pretrained(enc_name, num_hidden_layers=4, output_attentions=True, output_hidden_states=True)
+        self.decoder_config = AutoConfig.from_pretrained(dec_name, num_hidden_layers=4, output_attentions=True, output_hidden_states=True)
 
         self.encoder = getattr(__import__("transformers"), cfg.encoder.model).from_pretrained(enc_name, config=self.encoder_config)
         self.decoder = getattr(__import__("transformers"), cfg.decoder.model).from_pretrained(dec_name, config=self.decoder_config)
 
         self.encoder.load_state_dict(teacher_model.encoder.state_dict(), strict=False)
-        self.encoder.encoder.layer = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.encoder.encoder.layer) if i%2==1])
+        self.encoder.encoder.layer = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.encoder.encoder.layer) if i%3==2])
         # self.encoder.pooler.load_state_dict(teacher_model.encoder.pooler.state_dict())
 
         # self.decoder.transformers.wte = copy.deepcopy(teacher_model.decoder.transformers.wte)
@@ -105,7 +105,7 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
 
 
         self.decoder.load_state_dict(teacher_model.decoder.state_dict(), strict=False)
-        self.decoder.transformer.h = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.decoder.transformer.h) if i%2==1])
+        self.decoder.transformer.h = nn.ModuleList([copy.deepcopy(layer) for i, layer in enumerate(teacher_model.decoder.transformer.h) if i%3==2])
         # self.decoder.lm_head.load_state_dict(teacher_model.decoder_head.state_dict())
 
         self.decoder_body = getattr(self.decoder, cfg.decoder.body)
@@ -113,7 +113,8 @@ class StudentGrafomerModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToH
 
         self.bart_config = AutoConfig.from_pretrained("facebook/bart-base")
         self.decoder_embed_dim = cfg.decoder.embed_dim
-        self.graft_module = StudentGraftAttentionModule(self.bart_config, cfg.graft_module_config, self.decoder_embed_dim, teacher_model)
+        # self.graft_module = StudentGraftAttentionModule(self.bart_config, cfg.graft_module_config, self.decoder_embed_dim, teacher_model)
+        self.graft_module = copy.deepcopy(teacher_model.graft_module)
     
     def get_encoder(self):
         return self.encoder

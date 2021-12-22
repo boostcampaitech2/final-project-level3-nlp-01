@@ -7,10 +7,11 @@ import os
 
 import yaml
 import hydra
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 
 import torch
 import torch.nn as nn
+import datasets
 from torch.utils.data import DataLoader
 from datasets import load_metric
 from transformers import AutoConfig, AutoTokenizer
@@ -28,6 +29,63 @@ formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
 file_handler = logging.FileHandler(filename='train.log')
 logger.addHandler(file_handler)
 
+def load_data(data_path: str):
+
+    raw_dataset = load_from_disk(data_path)
+    return raw_dataset["train"], raw_dataset["validation"]
+
+
+def convert_data_to_features(
+    train_dataset: datasets.Dataset, 
+    valid_dataset: datasets.Dataset, 
+    encoder_tokenizer, 
+    decoder_tokenizer, 
+    need_prefix=False,
+):
+    fn_kwargs = {"max_length": 512, "max_target_length": 1024}
+    train_features = train_dataset.map(
+        preprocess_function_with_setting(
+            encoder_tokenizer, decoder_tokenizer, need_prefix=need_prefix
+        ),  # encoder tokenizer, decoder tokenizer, switch: bool, need_prefix: bool
+        num_proc=8, 
+        batched=True, 
+        remove_columns=train_dataset.column_names,
+        fn_kwargs = fn_kwargs,
+    )
+    valid_features = valid_dataset.map(
+        preprocess_function_with_setting(
+            encoder_tokenizer, decoder_tokenizer, need_prefix=need_prefix
+        ),  # encoder tokenizer, decoder tokenizer, switch: bool, need_prefix: bool
+        num_proc=8,
+        batched=True, 
+        remove_columns=valid_dataset.column_names,
+        fn_kwargs = fn_kwargs,
+    )
+
+    return train_features, valid_features
+
+
+def convert_data_to_dataloader(preprocessed_train, preprocessed_valid, batch_size, data_collator):
+    
+    train_dataloader = DataLoader(
+        preprocessed_train, 
+        batch_size=batch_size, 
+        pin_memory=True, 
+        num_workers=8,
+        shuffle=True, drop_last=True, 
+        collate_fn=data_collator
+    )
+    valid_dataloader = DataLoader(
+        preprocessed_valid, 
+        batch_size=batch_size, 
+        pin_memory=True, 
+        num_workers=8, 
+        shuffle=True, 
+        drop_last=False, 
+        collate_fn=data_collator
+    )
+
+    return train_dataloader, valid_dataloader
 
 @hydra.main(config_path='./configs', config_name="config.yaml")
 def main(cfg):
@@ -48,9 +106,9 @@ def main(cfg):
     
     teacher_model = GrafomerModel(enc_name, dec_name, cfg)
 
-    teacher_model.encoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/encoder/checkpoint_55000.pt'))
-    teacher_model.decoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/decoder/checkpoint_55000.pt'))
-    teacher_model.graft_module.load_state_dict(torch.load('/opt/ml/data/checkpoint/zh_model_checkpoint/graft_module/checkpoint_55000.pt'))
+    teacher_model.encoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/en_model_checkpoint/encoder/checkpoint_28000.pt'))
+    teacher_model.decoder.load_state_dict(torch.load('/opt/ml/data/checkpoint/en_model_checkpoint/decoder/checkpoint_28000.pt'))
+    teacher_model.graft_module.load_state_dict(torch.load('/opt/ml/data/checkpoint/en_model_checkpoint/graft_module/checkpoint_28000.pt'))
     
     student_model = StudentGrafomerModel(enc_name, dec_name, cfg, teacher_model)
     print(f"number of teacher model parameters: {teacher_model.num_parameters()}")
@@ -59,20 +117,42 @@ def main(cfg):
     if decoder_tokenizer.bos_token is None:
         decoder_tokenizer.bos_token = cfg.decoder.bos_token
 
-    raw_dataset = load_from_disk("/opt/ml/data/cn_unified_dataset")
-    train_set, valid_set = raw_dataset["train"], raw_dataset["validation"]
+    # raw_dataset = load_from_disk("/opt/ml/data/ko_unified_dataset")
+    # train_set, valid_set = raw_dataset["train"], raw_dataset["validation"]
     
-    fn_kwargs = cfg.data.fn_kwargs
-    tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
-                                    num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
-    tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix),
-                                    num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
+    # fn_kwargs = cfg.data.fn_kwargs
+    # tokenized_train = train_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix), 
+    #                                 num_proc=8, batched=True, remove_columns=train_set.column_names, fn_kwargs=fn_kwargs)
+    # tokenized_valid = valid_set.map(preprocess_function_with_setting(encoder_tokenizer, decoder_tokenizer, cfg.data.switch, cfg.decoder.need_prefix),
+    #                                 num_proc=8, batched=True, remove_columns=valid_set.column_names, fn_kwargs=fn_kwargs)
 
-    data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
-    train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
-                                  shuffle=True, drop_last=True, num_workers=8, collate_fn=data_collator)
-    valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
-                                  shuffle=False, drop_last=False, num_workers=8, collate_fn=data_collator)
+    # data_collator = CustomDataCollator(encoder_pad_token_id=encoder_tokenizer.pad_token_id, decoder_pad_token_id=decoder_tokenizer.pad_token_id)
+    # train_dataloader = DataLoader(tokenized_train, batch_size=cfg.train_config.batch_size, pin_memory=True,
+    #                               shuffle=True, drop_last=True, num_workers=8, collate_fn=data_collator)
+    # valid_dataloader = DataLoader(tokenized_valid, batch_size=cfg.train_config.batch_size, pin_memory=True, 
+    #                               shuffle=False, drop_last=False, num_workers=8, collate_fn=data_collator)
+
+    train_set, valid_set = load_data("/opt/ml/data/en_unified_dataset")
+    
+    tokenized_train, tokenized_valid = convert_data_to_features(
+        train_dataset = train_set, 
+        valid_dataset = valid_set, 
+        encoder_tokenizer = encoder_tokenizer, 
+        decoder_tokenizer = decoder_tokenizer, 
+        need_prefix = cfg.decoder.need_prefix
+    )
+
+    data_collator = CustomDataCollator(
+        encoder_pad_token_id = encoder_tokenizer.pad_token_id, 
+        decoder_pad_token_id = decoder_tokenizer.pad_token_id,
+    )  # encoder_pad_token_id, decoder_pad_token_id
+    
+    train_dataloader, valid_dataloader = convert_data_to_dataloader(
+        preprocessed_train = tokenized_train, 
+        preprocessed_valid = tokenized_valid, 
+        batch_size = cfg.train_config.batch_size, 
+        data_collator = data_collator,
+    )
 
     print("전처리 결과 한번 확인\n", decoder_tokenizer.batch_decode(next(iter(train_dataloader))["decoder_input_ids"]))
 
@@ -80,7 +160,7 @@ def main(cfg):
         param.requires_grad = False
     
     sacre_bleu = load_metric("sacrebleu")
-    bert_score = load_metric("bertscore")
+    # bert_score = load_metric("bertscore")
 
     total_steps = len(train_dataloader)  // cfg.train_config.gradient_accumulation_steps * cfg.train_config.num_train_epochs
     steps_per_epoch = len(train_dataloader) // cfg.train_config.gradient_accumulation_steps
@@ -110,8 +190,8 @@ def main(cfg):
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     
-    # loss_function = KDLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
-    loss_function = DistilLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
+    loss_function = KDLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
+    # loss_function = DistilLoss(decoder_tokenizer.pad_token_id, len(decoder_tokenizer))
     step = 0
     completed_steps = 0
     teacher_model.to(device)
@@ -133,8 +213,8 @@ def main(cfg):
                 student_outputs = student_model(batch["input_ids"], batch["attention_mask"], batch["decoder_input_ids"], batch["decoder_attention_mask"])
 
                 labels = batch["labels"].view(-1)
-                att_loss, rep_loss, pred_loss = loss_function(teacher_outputs, student_outputs, labels, batch["attention_mask"], batch["decoder_attention_mask"])
-                loss = att_loss*0.33 + rep_loss*0.33 + pred_loss*0.33
+                att_loss, rep_loss, pred_loss = loss_function(teacher_outputs, student_outputs, labels)
+                loss = att_loss + rep_loss + pred_loss
 
                 if cfg.train_config.gradient_accumulation_steps > 1:
                     loss = loss / cfg.train_config.gradient_accumulation_steps
@@ -160,10 +240,10 @@ def main(cfg):
                         f"lr: {optimizer.param_groups[0]['lr']:.7f}"
                     )
                     update_step += 1
-                if step % 100 == 0:
+                if step % 1000 == 0:
                     logger.info (
-                        f"Step [{step}] "
-                        f"loss: {loss / update_step :.3f}, "
+                        f"\nStep [{step}] "
+                        f"loss: {total_loss / update_step :.3f}, "
                         f"att loss: {total_att_loss / update_step :.3f}, "
                         f"hidd loss: {total_hidd_loss / update_step :.3f}, "
                         f"pred loss: {total_pred_loss / update_step :.3f}, "
@@ -203,7 +283,7 @@ def main(cfg):
 
                         decoded_preds, decoded_labels = postprocess_text(decoded_preds, decoded_labels)
                         sacre_bleu.add_batch(predictions=decoded_preds, references=decoded_labels)
-                        bert_score.add_batch(predictions=decoded_preds, references=decoded_labels)
+                        # bert_score.add_batch(predictions=decoded_preds, references=decoded_labels)
                         preds.extend(decoded_preds); gt.extend(decoded_labels)
 
                     
