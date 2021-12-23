@@ -218,12 +218,12 @@ class DistilLoss(nn.Module):
     
     def forward(self, teacher_outputs, student_outputs, labels, attention_mask, decoder_attention_mask):
         teacher_logit = teacher_outputs.logits
-        teacher_encoder_hidden = teacher_outputs.encoder_hidden_states #teacher_outputs.encoder_attentions
-        teacher_decoder_hidden = teacher_outputs.decoder_hidden_states # teacher_outputs.decoder_attentions
+        teacher_encoder_hidden, teacher_encoder_attns = teacher_outputs.encoder_hidden_states, teacher_outputs.encoder_attentions
+        teacher_decoder_hidden, teacher_decoder_attns = teacher_outputs.decoder_hidden_states, teacher_outputs.decoder_attentions
 
         student_logit = student_outputs.logits
-        student_encoder_hidden = student_outputs.encoder_hidden_states # student_outputs.encoder_attentions
-        student_decoder_hidden = student_outputs.decoder_hidden_states # student_outputs.decoder_attentions
+        student_encoder_hidden, student_encoder_attns = student_outputs.encoder_hidden_states, student_outputs.encoder_attentions
+        student_decoder_hidden, student_decoder_attns = student_outputs.decoder_hidden_states, student_outputs.decoder_attentions
 
         #Loss
         loss_ce = self.ce_loss_fct(F.log_softmax(student_logit/self.temperature, dim=-1),

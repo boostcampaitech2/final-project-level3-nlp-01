@@ -6,4 +6,4 @@ tokenizer: BertTokenizerFast
 embed_dim: 768
 bos_token: "[CLS]"
 decoder_start_token_id: 101
-need_prefix: false
+need_prefix: False
