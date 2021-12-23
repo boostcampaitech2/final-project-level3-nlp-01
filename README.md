@@ -148,6 +148,18 @@ configs
 
 `teacher_model.py`: Teacher 모델을 불러오는 클래스파일입니다.
 
+`wd_student_config.py`: Weight Distillation을 통해 생성된 Student 모델의 Configuration을 지정하는 클래스파일입니다.
+
+`wd_KdLoss_teacher_model.py`: TinyBERT의 Distillation loss를 적용할 수 있는 Teacher 모델을 불러오는 클래스파일입니다.
+
+`wd_KdLoss_student_model.py`: TinyBERT의 Distillation loss를 적용할 수 있는 Student 모델을 불러오는 클래스파일입니다.
+
+`wd_KdLoss_train.py`: TinyBERT의 Distillation loss를 적용한 Student 모델을 훈련시키는 코드파일입니다.
+
+`wd_WdLoss_student_model.py`: Weight Distillation 논문의 loss를 적용할 수 있는 Student 모델을 불러오는 클래스파일입니다.
+
+`wd_WdLoss_train.py`: Weight Distillation 논문의 loss를 적용한 Student 모델을 훈련시키는 코드파일입니다.
+
 `loss.py`: TinyBERT의 Distillation loss를 구현한 클래스 파일입니다.
 
 `evaluation.py`: 평가 데이터셋에 대하여 BLEU Score로 평가하는 코드 파일입니다.
@@ -170,7 +182,11 @@ $ python train_kd.py
 ```
 - Weight Distillation
 ```
-python 
+$ python wd_WdLoss_train.py
+
+# tiny Bert에서 적용한 Loss function
+# Out of Memory 문제
+$ python wd_KdLoss_train.py
 ```
 
 3. Evaluation
@@ -237,17 +253,6 @@ wd_student_config.py
 StudentEncoderConfig 클래스의 __init__ 메서드 안에 있는 num_hidden_layers에 원하는 student 모델 레이어 개수 지정
 StudentDecoderConfig 클래스의 __init__ 메서드 안에 있는 n_layer에 원하는 student 모델 레이어 개수 지정
 ```
-
-**Weight Distillation 훈련**
-```shell=
-# knowledge distillation시 적용하는 일반적인 Loss function
-python wd_WdLoss_train.py
-
-# tiny Bert에서 적용한 Loss function
-# Out of Memory 문제
-python wd_KdLoss_train.py
-```
-원하는 설정에 맞춰 config.yaml과 각 train.py 스크립트에 있는 data_path, teacher model_checkpoint 수정한 후 사용
 
 # 결과
 ![](https://i.imgur.com/3WBZSkX.png)
