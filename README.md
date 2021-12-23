@@ -244,16 +244,6 @@ poetry install && poetry update
 python main.py
 ```
 
-### Weight Distillation 실행방법
-
-**Student Model Layer 설정**
-```
-wd_student_config.py
-
-StudentEncoderConfig 클래스의 __init__ 메서드 안에 있는 num_hidden_layers에 원하는 student 모델 레이어 개수 지정
-StudentDecoderConfig 클래스의 __init__ 메서드 안에 있는 n_layer에 원하는 student 모델 레이어 개수 지정
-```
-
 # 결과
 ![](https://i.imgur.com/3WBZSkX.png)
 
